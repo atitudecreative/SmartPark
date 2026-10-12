@@ -1,0 +1,462 @@
+{
+  "version": 1,
+  "author": "Eduardo — TCC Smart Park",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-esp32-devkit-v1",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-hc-sr04",
+      "id": "ultra",
+      "top": -170,
+      "left": -190,
+      "attrs": {
+        "distance": "200"
+      }
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "cancela",
+      "top": -170,
+      "left": 60,
+      "attrs": {}
+    },
+    {
+      "type": "board-ssd1306",
+      "id": "oled",
+      "top": -160,
+      "left": 260,
+      "attrs": {
+        "i2cAddress": "0x3c"
+      }
+    },
+    {
+      "type": "wokwi-slide-switch",
+      "id": "swA01",
+      "top": 140,
+      "left": 220,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-led",
+      "id": "ledA01",
+      "top": 40,
+      "left": 224,
+      "attrs": {
+        "color": "red",
+        "label": "A01"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "rA01",
+      "top": 95,
+      "left": 210,
+      "rotate": 90,
+      "attrs": {
+        "value": "220"
+      }
+    },
+    {
+      "type": "wokwi-slide-switch",
+      "id": "swA02",
+      "top": 140,
+      "left": 290,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-led",
+      "id": "ledA02",
+      "top": 40,
+      "left": 294,
+      "attrs": {
+        "color": "red",
+        "label": "A02"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "rA02",
+      "top": 95,
+      "left": 280,
+      "rotate": 90,
+      "attrs": {
+        "value": "220"
+      }
+    },
+    {
+      "type": "wokwi-slide-switch",
+      "id": "swA03",
+      "top": 140,
+      "left": 360,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-led",
+      "id": "ledA03",
+      "top": 40,
+      "left": 364,
+      "attrs": {
+        "color": "red",
+        "label": "A03"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "rA03",
+      "top": 95,
+      "left": 350,
+      "rotate": 90,
+      "attrs": {
+        "value": "220"
+      }
+    },
+    {
+      "type": "wokwi-slide-switch",
+      "id": "swB01",
+      "top": 140,
+      "left": 430,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-led",
+      "id": "ledB01",
+      "top": 40,
+      "left": 434,
+      "attrs": {
+        "color": "red",
+        "label": "B01"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "rB01",
+      "top": 95,
+      "left": 420,
+      "rotate": 90,
+      "attrs": {
+        "value": "220"
+      }
+    },
+    {
+      "type": "wokwi-slide-switch",
+      "id": "swB02",
+      "top": 140,
+      "left": 500,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-led",
+      "id": "ledB02",
+      "top": 40,
+      "left": 504,
+      "attrs": {
+        "color": "red",
+        "label": "B02"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "rB02",
+      "top": 95,
+      "left": 490,
+      "rotate": 90,
+      "attrs": {
+        "value": "220"
+      }
+    },
+    {
+      "type": "wokwi-slide-switch",
+      "id": "swB03",
+      "top": 140,
+      "left": 570,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-led",
+      "id": "ledB03",
+      "top": 40,
+      "left": 574,
+      "attrs": {
+        "color": "red",
+        "label": "B03"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "rB03",
+      "top": 95,
+      "left": 560,
+      "rotate": 90,
+      "attrs": {
+        "value": "220"
+      }
+    }
+  ],
+  "connections": [
+    [
+      "esp:TX0",
+      "$serialMonitor:RX",
+      "",
+      []
+    ],
+    [
+      "esp:RX0",
+      "$serialMonitor:TX",
+      "",
+      []
+    ],
+    [
+      "ultra:VCC",
+      "esp:VIN",
+      "red",
+      []
+    ],
+    [
+      "ultra:GND",
+      "esp:GND.1",
+      "black",
+      []
+    ],
+    [
+      "ultra:TRIG",
+      "esp:D5",
+      "green",
+      []
+    ],
+    [
+      "ultra:ECHO",
+      "esp:D18",
+      "blue",
+      []
+    ],
+    [
+      "cancela:V+",
+      "esp:VIN",
+      "red",
+      []
+    ],
+    [
+      "cancela:GND",
+      "esp:GND.1",
+      "black",
+      []
+    ],
+    [
+      "cancela:PWM",
+      "esp:D13",
+      "orange",
+      []
+    ],
+    [
+      "oled:VCC",
+      "esp:3V3",
+      "red",
+      []
+    ],
+    [
+      "oled:GND",
+      "esp:GND.2",
+      "black",
+      []
+    ],
+    [
+      "oled:SDA",
+      "esp:D21",
+      "purple",
+      []
+    ],
+    [
+      "oled:SCL",
+      "esp:D22",
+      "gold",
+      []
+    ],
+    [
+      "swA01:2",
+      "esp:D32",
+      "green",
+      []
+    ],
+    [
+      "swA01:3",
+      "esp:GND.2",
+      "black",
+      []
+    ],
+    [
+      "ledA01:A",
+      "rA01:1",
+      "red",
+      []
+    ],
+    [
+      "rA01:2",
+      "esp:D15",
+      "red",
+      []
+    ],
+    [
+      "ledA01:C",
+      "esp:GND.2",
+      "black",
+      []
+    ],
+    [
+      "swA02:2",
+      "esp:D33",
+      "green",
+      []
+    ],
+    [
+      "swA02:3",
+      "esp:GND.2",
+      "black",
+      []
+    ],
+    [
+      "ledA02:A",
+      "rA02:1",
+      "red",
+      []
+    ],
+    [
+      "rA02:2",
+      "esp:D2",
+      "red",
+      []
+    ],
+    [
+      "ledA02:C",
+      "esp:GND.2",
+      "black",
+      []
+    ],
+    [
+      "swA03:2",
+      "esp:D25",
+      "green",
+      []
+    ],
+    [
+      "swA03:3",
+      "esp:GND.2",
+      "black",
+      []
+    ],
+    [
+      "ledA03:A",
+      "rA03:1",
+      "red",
+      []
+    ],
+    [
+      "rA03:2",
+      "esp:D4",
+      "red",
+      []
+    ],
+    [
+      "ledA03:C",
+      "esp:GND.2",
+      "black",
+      []
+    ],
+    [
+      "swB01:2",
+      "esp:D26",
+      "green",
+      []
+    ],
+    [
+      "swB01:3",
+      "esp:GND.2",
+      "black",
+      []
+    ],
+    [
+      "ledB01:A",
+      "rB01:1",
+      "red",
+      []
+    ],
+    [
+      "rB01:2",
+      "esp:RX2",
+      "red",
+      []
+    ],
+    [
+      "ledB01:C",
+      "esp:GND.2",
+      "black",
+      []
+    ],
+    [
+      "swB02:2",
+      "esp:D27",
+      "green",
+      []
+    ],
+    [
+      "swB02:3",
+      "esp:GND.2",
+      "black",
+      []
+    ],
+    [
+      "ledB02:A",
+      "rB02:1",
+      "red",
+      []
+    ],
+    [
+      "rB02:2",
+      "esp:TX2",
+      "red",
+      []
+    ],
+    [
+      "ledB02:C",
+      "esp:GND.2",
+      "black",
+      []
+    ],
+    [
+      "swB03:2",
+      "esp:D14",
+      "green",
+      []
+    ],
+    [
+      "swB03:3",
+      "esp:GND.2",
+      "black",
+      []
+    ],
+    [
+      "ledB03:A",
+      "rB03:1",
+      "red",
+      []
+    ],
+    [
+      "rB03:2",
+      "esp:D19",
+      "red",
+      []
+    ],
+    [
+      "ledB03:C",
+      "esp:GND.2",
+      "black",
+      []
+    ]
+  ],
+  "dependencies": {}
+}

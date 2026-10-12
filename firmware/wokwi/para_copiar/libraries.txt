@@ -1,0 +1,5 @@
+PubSubClient
+ESP32Servo
+Adafruit SSD1306
+Adafruit GFX Library
+ArduinoJson

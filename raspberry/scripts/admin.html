@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Administração · Smart Park</title>
+<link rel="preload" href="/fontes/overpass-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/estilo.css">
+<script src="/ui.js"></script>
+<style>
+  /* login */
+  .login { width: min(400px, 100%); margin: 8vh auto 0; }
+  .login .card__body { display: grid; gap: var(--sp-5); padding: var(--sp-8); }
+  .login .pin { font: 600 26px/1 var(--mono); letter-spacing: .4em; text-align: center; min-height: 52px; padding-left: .4em; }
+  .login-ic { width: 40px; height: 40px; border-radius: var(--r-lg); background: var(--brand-soft); color: var(--brand-text); display: grid; place-items: center; }
+  .login-ic svg { width: 20px; height: 20px; }
+
+  /* ao vivo */
+  .agora { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-6); padding: var(--sp-3) var(--sp-5); font-size: var(--t-sm); color: var(--text-2); }
+  .agora b { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 700; }
+  .agora .lbl { display: inline-flex; align-items: center; gap: var(--sp-2); font-weight: 700; color: var(--text); }
+
+  /* sensores */
+  .problemas { display: grid; gap: var(--sp-3); }
+  .problema { display: grid; grid-template-columns: 20px 1fr; gap: 4px var(--sp-3); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-md); background: var(--surface-2); font-size: var(--t-sm); line-height: var(--lh-sm); }
+  .problema svg { width: 18px; height: 18px; color: var(--warning); margin-top: 1px; grid-row: span 3; }
+  .problema.falha svg { color: var(--danger); }
+  .problema b { font-size: var(--t-base); line-height: var(--lh-base); }
+  .problema .muted { font-size: var(--t-sm); }
+  .sens-setor { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: var(--sp-3); align-items: start; padding: var(--sp-3) 0; border-top: 1px solid var(--border); }
+  .sens-setor:first-child { border-top: 0; padding-top: 0; }
+  .sens-setor b { font-size: var(--t-sm); padding-top: 4px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip-s { font: 600 11px/1 var(--mono); padding: 6px 0; width: 38px; text-align: center; border-radius: 5px; background: var(--surface-2); color: var(--text-3); border: 1px solid var(--border); }
+  .chip-s.atencao { background: var(--warning); border-color: var(--warning); color: #1b1300; }
+  .chip-s.falha { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+  .lgpd { display: grid; gap: var(--sp-3); font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--text-2); }
+  .lgpd li { margin-left: 18px; }
+  .resumo-consulta { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-5); align-items: center; font-size: var(--t-sm); color: var(--text-2); }
+  .resumo-consulta b { color: var(--text); }
+  #g-curvas svg { max-height: 340px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+
+    <!-- ========================================================== LOGIN -->
+    <main class="page" id="tela-login" hidden>
+      <form class="card login" id="form-login" novalidate>
+        <div class="card__body">
+          <div class="login-ic" id="login-ic"></div>
+          <div class="stack" style="gap:4px"><h1 class="h1">Área administrativa</h1>
+            <p class="muted text-sm">Relatórios, cadastro de placas e saúde dos sensores.</p></div>
+          <div class="field">
+            <label for="senha">Senha de 6 dígitos</label>
+            <input class="input pin" id="senha" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="current-password" aria-describedby="senha-dica msg-login" required>
+            <span class="hint" id="senha-dica">Aparece no terminal na primeira vez que o sistema é aberto. Para trocar: <code>python scripts/senha_admin.py</code></span>
+            <span class="error" id="msg-login" role="alert"></span>
+          </div>
+          <button class="btn btn--primary btn--lg" type="submit" id="entrar">Entrar</button>
+        </div>
+      </form>
+    </main>
+
+    <!-- ========================================================== APP -->
+    <div id="app" hidden>
+      <header class="page-header">
+        <div class="page-title"><h1 class="h1" id="titulo">Visão geral</h1><p id="subtitulo"></p></div>
+        <div class="page-actions" id="acoes-visao">
+          <div class="seg" role="group" aria-label="Período" id="periodo">
+            <button type="button" data-dias="7" aria-pressed="false">7 dias</button>
+            <button type="button" data-dias="14" aria-pressed="false">14 dias</button>
+            <button type="button" data-dias="30" aria-pressed="true">30 dias</button>
+          </div>
+        </div>
+      </header>
+
+      <!-- ===================================================== VISÃO GERAL -->
+      <main class="page secao" id="sec-visao">
+        <div class="card agora" id="agora" aria-live="polite"><span class="lbl"><span class="dot-live"></span>Agora</span></div>
+        <div id="faixa-alerta"></div>
+        <dl class="stats" id="kpis"></dl>
+
+        <section class="card" aria-labelledby="h-curvas">
+          <div class="card__head"><div><h2 class="h2" id="h-curvas">Ocupação média ao longo do culto</h2><p>% das vagas ocupadas, minuto a minuto em relação ao início</p></div><div class="legend" id="leg-curvas"></div></div>
+          <div class="card__body"><div class="chart" id="g-curvas"></div></div>
+        </section>
+
+        <div class="grid-2">
+          <section class="card" aria-labelledby="h-carros">
+            <div class="card__head"><div><h2 class="h2" id="h-carros">Carros por culto</h2><p>Clique numa barra para ver quem esteve em cada vaga</p></div></div>
+            <div class="card__body"><div class="chart" id="g-carros"></div><div class="legend" id="leg-carros" style="margin-top:12px"></div></div>
+          </section>
+          <section class="card" aria-labelledby="h-cats">
+            <div class="card__head"><div><h2 class="h2" id="h-cats">Quem estaciona</h2><p>Permanências por categoria</p></div></div>
+            <div class="card__body"><div class="bars" id="g-cats"></div></div>
+          </section>
+        </div>
+
+        <div class="grid-2">
+          <section class="card" aria-labelledby="h-mapa">
+            <div class="card__head"><div><h2 class="h2" id="h-mapa">Uso de cada vaga</h2><p>Quanto do tempo de culto cada vaga ficou ocupada. Passe o mouse numa vaga.</p></div></div>
+            <div class="card__body"><div class="planta-box" id="g-mapa"></div>
+              <div class="legend" style="margin-top:12px"><span><i style="background:rgba(57,135,229,.15)"></i>Menos usada</span><span><i style="background:rgba(57,135,229,.95)"></i>Mais usada</span></div></div>
+          </section>
+          <section class="card" aria-labelledby="h-corr">
+            <div class="card__head"><div><h2 class="h2" id="h-corr">Quando cada corredor lota</h2><p>Média em relação ao início do culto</p></div></div>
+            <div class="table-wrap" style="margin-top:12px" id="g-corredores"></div>
+          </section>
+        </div>
+
+        <section class="card" aria-labelledby="h-avisos">
+          <div class="card__head"><div><h2 class="h2" id="h-avisos">Avisos de lotação</h2><p>O sistema avisou antes de lotar? O aviso é confirmado em 2 leituras e começa até 15 min antes.</p></div></div>
+          <div class="card__body stack">
+            <dl class="stats is-compact" id="kpis-avisos"></dl>
+          </div>
+          <div id="t-avisos"></div>
+        </section>
+
+        <section class="card" aria-labelledby="h-cultos">
+          <div class="card__head"><div><h2 class="h2" id="h-cultos">Cultos do período</h2><p>Clique num culto para ver quem esteve em cada vaga</p></div></div>
+          <div id="t-cultos" style="margin-top:12px"></div>
+        </section>
+      </main>
+
+      <!-- ===================================================== CONSULTAS -->
+      <main class="page secao" id="sec-consultas" hidden>
+        <form class="card" id="f-consulta" role="search" aria-label="Filtros da consulta">
+          <div class="card__body">
+            <div class="form-grid">
+              <div class="field"><label for="c-de">De</label><input class="input" type="date" id="c-de"></div>
+              <div class="field"><label for="c-ate">Até</label><input class="input" type="date" id="c-ate"></div>
+              <div class="field"><label for="c-culto">Culto</label><select class="select" id="c-culto"><option value="">Todos</option></select></div>
+              <div class="field"><label for="c-cat">Categoria</label><select class="select" id="c-cat"><option value="">Todas</option><option value="MEMBRO">Membro</option><option value="IDOSO">Idoso</option><option value="PCD">PcD</option><option value="EQUIPE">Equipe</option><option value="VISITANTE">Visitante</option></select></div>
+              <div class="field"><label for="c-placa">Placa</label><input class="input mono" id="c-placa" maxlength="8" placeholder="ABC1D23" autocomplete="off" spellcheck="false"></div>
+              <div class="field"><label for="c-vaga">Vaga</label><input class="input mono" id="c-vaga" maxlength="4" placeholder="137" autocomplete="off"></div>
+            </div>
+            <div class="form-actions" style="margin-top:16px">
+              <button class="btn btn--primary" type="submit" id="c-buscar">Consultar</button>
+              <button class="btn btn--ghost" type="button" id="c-limpar">Limpar filtros</button>
+            </div>
+          </div>
+        </form>
+        <section class="card" aria-labelledby="h-res">
+          <div class="card__head">
+            <div><h2 class="h2" id="h-res">Resultado</h2><div class="resumo-consulta" id="c-resumo" aria-live="polite"></div></div>
+            <a class="btn btn--sm" id="c-csv" href="#" download>Baixar CSV</a>
+          </div>
+          <div id="t-consulta" style="margin-top:12px"></div>
+        </section>
+      </main>
+
+      <!-- ===================================================== CADASTRO -->
+      <main class="page secao" id="sec-cadastro" hidden>
+        <div class="grid-2" style="align-items:start">
+          <form class="card" id="f-cad" novalidate aria-labelledby="h-novo">
+            <div class="card__head"><div><h2 class="h2" id="h-novo">Novo cadastro</h2><p>Cadastre somente com o termo de consentimento assinado.</p></div></div>
+            <div class="card__body stack">
+              <div class="field">
+                <label for="n-placa">Placa</label>
+                <input class="input mono" id="n-placa" required maxlength="8" placeholder="ABC1D23" autocomplete="off" spellcheck="false" aria-describedby="n-placa-h n-placa-e">
+                <span class="hint" id="n-placa-h">Formato Mercosul (ABC1D23) ou antigo (ABC1234)</span>
+                <span class="error" id="n-placa-e" hidden></span>
+              </div>
+              <div class="field">
+                <label for="n-cat">Categoria</label>
+                <select class="select" id="n-cat" aria-describedby="n-cat-h"><option value="MEMBRO">Membro</option><option value="IDOSO">Idoso</option><option value="PCD">PcD</option><option value="EQUIPE">Equipe</option></select>
+                <span class="hint" id="n-cat-h">Idoso e PcD recebem vagas preferenciais; Equipe estaciona mais longe para liberar as vagas próximas.</span>
+              </div>
+              <div class="field">
+                <label for="n-apelido">Apelido <span class="subtle" style="font-weight:400">(opcional)</span></label>
+                <input class="input" id="n-apelido" maxlength="30" placeholder="Dona Maria" aria-describedby="n-apelido-h">
+                <span class="hint" id="n-apelido-h">Aparece na saudação do tablet: “Olá, Dona Maria!”</span>
+              </div>
+              <div class="form-actions"><button class="btn btn--primary" type="submit" id="n-salvar">Cadastrar placa</button></div>
+            </div>
+          </form>
+          <section class="card" aria-labelledby="h-lgpd">
+            <div class="card__head"><h2 class="h2" id="h-lgpd">Pedidos do titular (LGPD)</h2></div>
+            <div class="card__body lgpd">
+              <p><b style="color:var(--text)">Ver os próprios dados:</b> na lista abaixo, use <i>Ver histórico</i> na placa da pessoa.</p>
+              <p><b style="color:var(--text)">Excluir:</b> use <i>Excluir</i>. O cadastro é apagado e a placa sai de todo o histórico. Vagas e horários continuam, sem identificação.</p>
+              <p><b style="color:var(--text)">Automático:</b> placas com mais de 30 dias são anonimizadas, e visitantes nunca têm a placa gravada.</p>
+            </div>
+          </section>
+        </div>
+        <section class="card" aria-labelledby="h-veic">
+          <div class="card__head">
+            <div><h2 class="h2" id="h-veic">Veículos cadastrados</h2><p id="cad-total">&nbsp;</p></div>
+            <div class="field" style="width:min(280px,100%)"><label class="sr-only" for="busca-cad">Buscar por placa ou apelido</label>
+              <div class="input-icon"><span id="ic-b2"></span><input class="input" id="busca-cad" type="search" placeholder="Buscar placa ou apelido" autocomplete="off"></div></div>
+          </div>
+          <div id="t-cad" style="margin-top:12px"></div>
+        </section>
+      </main>
+
+      <!-- ===================================================== VISITANTES -->
+      <main class="page secao" id="sec-visitantes" hidden>
+        <dl class="stats" id="kpis-vis"></dl>
+        <div id="pendentes"></div>
+        <section class="card" aria-labelledby="h-vis">
+          <div class="card__head">
+            <div><h2 class="h2" id="h-vis">Histórico de visitas</h2><p id="vis-sub">&nbsp;</p></div>
+            <div class="row">
+              <div class="seg" role="group" aria-label="Filtrar visitantes" id="vis-filtro">
+                <button type="button" data-f="todos" aria-pressed="true">Todos</button>
+                <button type="button" data-f="voltaram" aria-pressed="false">Voltaram</button>
+                <button type="button" data-f="ofertar" aria-pressed="false">3+ visitas</button>
+                <button type="button" data-f="pendente" aria-pressed="false">Aguardando cadastro</button>
+              </div>
+              <div class="field" style="width:200px"><label class="sr-only" for="vis-busca">Buscar código ou placa</label>
+                <input class="input" id="vis-busca" type="search" placeholder="Código ou placa" autocomplete="off"></div>
+            </div>
+          </div>
+          <div id="t-vis" style="margin-top:12px"></div>
+          <div class="card__foot text-xs">Privacidade: o histórico guarda só um código (cifrado a partir da placa) e os dias das visitas, por <span id="vis-ret">180</span> dias. A placa aparece apenas para quem veio hoje ou aceitou o cadastro. Quando o visitante se cadastra, o histórico dele de visitante é apagado. Uma visita = um dia diferente: manhã e noite no mesmo dia contam como uma.</div>
+        </section>
+      </main>
+
+      <!-- ===================================================== SENSORES -->
+      <main class="page secao" id="sec-sensores" hidden>
+        <dl class="stats" id="kpis-sensores"></dl>
+        <div class="grid-2" style="align-items:start">
+          <section class="card" aria-labelledby="h-prob">
+            <div class="card__head"><div><h2 class="h2" id="h-prob">O que precisa de atenção</h2><p>Diagnóstico pelo comportamento dos sensores nos últimos 14 dias</p></div></div>
+            <div class="card__body"><div class="problemas" id="problemas"></div></div>
+          </section>
+          <section class="card" aria-labelledby="h-msens">
+            <div class="card__head"><div><h2 class="h2" id="h-msens">Mapa dos sensores</h2><p>Só os sensores com problema ficam marcados</p></div></div>
+            <div class="card__body"><div class="planta-box" id="mapa-sensores"></div>
+              <div class="legend" style="margin-top:12px"><span><i style="background:var(--warning)"></i>Atenção</span><span><i style="background:var(--danger)"></i>Falha</span></div></div>
+          </section>
+        </div>
+        <section class="card" aria-labelledby="h-todos">
+          <div class="card__head"><div><h2 class="h2" id="h-todos">Todos os sensores</h2><p>Passe o mouse ou toque numa vaga para ver os detalhes</p></div>
+            <div class="legend"><span><i style="background:var(--surface-2); outline:1px solid var(--border); outline-offset:-1px"></i>OK</span><span><i style="background:var(--warning)"></i>Atenção</span><span><i style="background:var(--danger)"></i>Falha</span></div></div>
+          <div class="card__body"><div id="lista-sensores"></div></div>
+          <div class="card__foot text-xs">Regras: ocupada por mais de 6 h seguidas (falha); 6 ou mais trocas livre/ocupada em 10 min (oscilando); nenhuma ocupação em 14 dias enquanto as outras vagas têm 4 ou mais (sem uso); 3 ou mais ocupações de menos de 1 minuto (leituras curtas).</div>
+        </section>
+      </main>
+
+      <!-- ===================================================== EVENTOS -->
+      <main class="page secao" id="sec-eventos" hidden>
+        <section class="card" aria-labelledby="h-ev">
+          <div class="card__head">
+            <div><h2 class="h2" id="h-ev">Registro de eventos</h2><p id="ev-total">&nbsp;</p></div>
+            <div class="field" style="width:min(260px,100%)"><label class="sr-only" for="e-tipo">Tipo de evento</label>
+              <select class="select" id="e-tipo"><option value="">Todos os eventos</option><option value="ENTRADA">Entrada na cancela</option><option value="VAGA_ATRIBUIDA">Vaga indicada</option><option value="VAGA_OCUPADA">Vaga ocupada</option><option value="VAGA_LIVRE">Vaga liberada</option><option value="LOTADO">Carro sem vaga</option><option value="ALERTA_LOTACAO">Aviso de lotação</option><option value="LOTOU">Estacionamento lotou</option><option value="NECESSIDADE_DECLARADA">Pediu vaga preferencial</option></select></div>
+          </div>
+          <div id="t-eventos" style="margin-top:12px"></div>
+        </section>
+      </main>
+    </div>
+  </div>
+</div>
+
+<script src="/planta.js"></script>
+<script>
+const $ = id => document.getElementById(id), { f } = UI;
+const CORES = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)'];
+let NOMES = [], LAYOUT = null, DIAS = 30, secaoAtual = null;
+
+UI.shell({ ativo: 'visao', aoSair: mostrarLogin });
+$('login-ic').innerHTML = UI.icone('cadeado');
+$('ic-b2').outerHTML = UI.icone('busca');
+$('n-salvar').textContent = 'Cadastrar placa';
+
+async function api(url, opts = {}) {
+  const r = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  if (r.status === 401) { mostrarLogin(); throw new Error('sessão expirada'); }
+  return r.json();
+}
+
+// ================================================================ LOGIN
+function mostrarLogin() {
+  $('app').hidden = true; $('tela-login').hidden = false;
+  document.title = 'Entrar · Administração · Smart Park';
+  UI.definirLogado(false); UI.marcarAtivo(null);
+  setTimeout(() => $('senha').focus(), 50);
+}
+$('form-login').onsubmit = e => {
+  e.preventDefault();
+  const s = $('senha').value.trim();
+  if (!/^\d{6}$/.test(s)) { $('msg-login').innerHTML = UI.icone('erro') + 'Digite os 6 números da senha.'; $('senha').setAttribute('aria-invalid', 'true'); $('senha').focus(); return; }
+  UI.enviando($('entrar'), async () => {
+    const r = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ senha: s }) });
+    const d = await r.json();
+    if (!d.ok) { $('msg-login').innerHTML = UI.icone('erro') + f.esc(d.erro); $('senha').setAttribute('aria-invalid', 'true'); $('senha').select(); return; }
+    $('senha').value = ''; $('msg-login').textContent = ''; $('senha').removeAttribute('aria-invalid');
+    iniciar();
+  });
+};
+$('senha').oninput = () => { $('senha').value = $('senha').value.replace(/\D/g, ''); $('senha').removeAttribute('aria-invalid'); $('msg-login').textContent = ''; };
+
+// ================================================================ SEÇÕES (#visao, #consultas, ...)
+const SECOES = {
+  visao: { titulo: 'Visão geral', sub: () => `Últimos ${DIAS} dias`, carregar: () => carregarVisao() },
+  consultas: { titulo: 'Consultas', sub: () => 'Permanências por período, culto, categoria, placa ou vaga', carregar: () => consultar() },
+  cadastro: { titulo: 'Cadastro', sub: () => 'Placas de membros com consentimento (LGPD)', carregar: () => carregarCadastro() },
+  visitantes: { titulo: 'Visitantes', sub: () => 'Quem nos visitou e quantas vezes voltou', carregar: () => carregarVisitantes() },
+  sensores: { titulo: 'Sensores', sub: () => 'Saúde dos sensores das vagas e do controlador', carregar: () => carregarSensores() },
+  eventos: { titulo: 'Eventos', sub: () => 'Tudo o que aconteceu na cancela e nas vagas', carregar: () => carregarEventos() },
+};
+function abrirSecao(nome, carregar = true) {
+  if (!SECOES[nome]) nome = 'visao';
+  secaoAtual = nome;
+  document.querySelectorAll('.secao').forEach(s => s.hidden = s.id !== 'sec-' + nome);
+  $('acoes-visao').hidden = nome !== 'visao';
+  $('titulo').textContent = SECOES[nome].titulo; $('subtitulo').textContent = SECOES[nome].sub();
+  document.title = `${SECOES[nome].titulo} · Administração · Smart Park`;
+  UI.marcarAtivo(nome);
+  if (carregar) SECOES[nome].carregar().catch(() => {});
+}
+addEventListener('hashchange', () => { if (!$('app').hidden) { abrirSecao(location.hash.slice(1)); scrollTo(0, 0); } });
+function irPara(nome) { if (location.hash !== '#' + nome) location.hash = nome; else abrirSecao(nome); }
+
+// ================================================================ VISÃO GERAL
+document.querySelectorAll('#periodo button').forEach(b => b.onclick = () => {
+  DIAS = +b.dataset.dias;
+  document.querySelectorAll('#periodo button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  $('subtitulo').textContent = SECOES.visao.sub(); carregarVisao();
+});
+
+async function aoVivo() {
+  if ($('app').hidden || secaoAtual !== 'visao') return;
+  try {
+    const d = await (await fetch('/estado')).json();
+    const oc = d.vagas.filter(v => v.estado === 'ocupada').length, res = d.vagas.filter(v => v.estado === 'reservada').length, p = d.painel;
+    $('agora').innerHTML = `<span class="lbl"><span class="dot-live"></span>Agora</span>
+      <span>Ocupadas <b>${oc} de ${d.vagas.length}</b></span><span>A caminho <b>${res}</b></span><span>Livres <b>${d.vagas.length - oc - res}</b></span>
+      <span>Chegadas previstas em 5 min <b>${p.previsao_5min == null ? '–' : f.num(p.previsao_5min, 1)}</b></span>
+      ${p.instante ? `<span>Último carro <b class="placa">${f.esc(p.placa)}</b> → <b>vaga ${f.esc(p.vaga)}</b> às ${f.hora(p.instante)}</span>` : ''}`;
+    const al = p.alerta || { nivel: 'ok' };
+    $('faixa-alerta').innerHTML = al.nivel === 'ok' ? '' : `<div class="alert alert--${al.nivel === 'atencao' ? 'warning' : 'danger'}">${UI.icone(al.nivel === 'lotado' ? 'proibido' : 'alerta')}
+      <div class="alert__body"><strong>${f.esc(al.msg)}</strong><p>${al.livres} vagas livres${al.chegadas_15min != null ? ` · ~${Math.round(al.chegadas_15min)} chegadas previstas em 15 min` : ''}</p></div></div>`;
+  } catch (e) {}
+}
+
+async function carregarVisao() {
+  if (!$('kpis').children.length) $('kpis').innerHTML = Array.from({ length: 5 }, () => '<div class="stat"><dt class="skeleton" style="height:12px;width:60%"></dt><dd class="skeleton" style="height:28px;width:40%;margin-top:6px"></dd></div>').join('');
+  const v = await api('/api/admin/visao?dias=' + DIAS);
+  NOMES = v.nomes_culto;
+  const k = v.kpis;
+  $('kpis').innerHTML = [
+    ['Cultos registrados', f.num(k.cultos), `nos últimos ${v.dias} dias`],
+    ['Carros por culto', f.num(k.carros_por_culto, 1), `de ${v.total_vagas} vagas`],
+    ['Tempo médio estacionado', k.cultos ? f.dur(k.tempo_medio_s) : '–', 'da chegada à saída da vaga'],
+    ['Cultos que lotaram', `${k.cultos_que_lotaram}<small> de ${k.cultos}</small>`, 'todas as vagas ocupadas'],
+    ['Seguiram a orientação', k.adesao_pct == null ? '–' : f.pct(k.adesao_pct, 1), 'pararam na vaga indicada'],
+  ].map(([a, b, c]) => `<div class="stat"><dt>${a}</dt><dd>${b}</dd><span class="ctx">${c}</span></div>`).join('');
+  graficoCurvas(v); mapaUso(v); graficoCarros(v); categorias(v); corredores(v); tabelaCultos(v);
+  carregarAvisos(v.dias);
+}
+
+function graficoCurvas(v) {
+  const W = 960, H = 300, m = { l: 40, r: 12, t: 12, b: 30 };
+  const xs = v.curva_minutos, x0 = xs[0], x1 = xs[xs.length - 1];
+  const X = mm => m.l + (W - m.l - m.r) * (mm - x0) / (x1 - x0), Y = p => m.t + (H - m.t - m.b) * (1 - p / 100);
+  const series = Object.entries(v.curvas_tipo);
+  if (!series.length) { $('g-curvas').innerHTML = UI.vazio('Sem cultos no período', 'Escolha um período maior.', 'grafico'); $('leg-curvas').innerHTML = ''; return; }
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Ocupação média por tipo de culto, de 60 minutos antes a 150 minutos depois do início">`;
+  for (const p of [0, 25, 50, 75, 100]) s += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(p)}" y2="${Y(p)}" style="stroke:var(--grid)"/><text x="${m.l - 8}" y="${Y(p) + 4}" text-anchor="end">${p}%</text>`;
+  for (const mm of [-60, -30, 0, 30, 60, 90, 120, 150]) s += `<text x="${X(mm)}" y="${H - 8}" text-anchor="middle">${mm === 0 ? 'início' : (mm > 0 ? '+' : '') + mm + ' min'}</text>`;
+  s += `<line x1="${X(0)}" x2="${X(0)}" y1="${m.t}" y2="${H - m.b}" style="stroke:var(--text-3)" stroke-dasharray="3 4"/>`;
+  series.forEach(([nome, d]) => {
+    const pts = d.curva.map((p, j) => p == null ? null : `${X(xs[j])},${Y(p)}`).filter(Boolean);
+    s += `<polyline points="${pts.join(' ')}" fill="none" style="stroke:${CORES[NOMES.indexOf(nome)]}" stroke-width="2.25" stroke-linejoin="round"/>`;
+  });
+  s += `<line id="cursor-c" y1="${m.t}" y2="${H - m.b}" style="stroke:var(--text-3)" visibility="hidden"/><rect x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent" id="hit-c"/></svg>`;
+  $('g-curvas').innerHTML = s;
+  $('leg-curvas').innerHTML = series.map(([nome, d]) => `<span><i class="line" style="background:${CORES[NOMES.indexOf(nome)]}"></i>${nome} <span class="subtle">(${d.n})</span></span>`).join('');
+  const svg = $('g-curvas').querySelector('svg'), cur = $('cursor-c');
+  $('hit-c').addEventListener('pointermove', e => {
+    const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) * W / r.width;
+    const mm = x0 + (px - m.l) / (W - m.l - m.r) * (x1 - x0);
+    const j = Math.max(0, Math.min(xs.length - 1, Math.round((mm - x0) / (xs[1] - xs[0]))));
+    cur.setAttribute('x1', X(xs[j])); cur.setAttribute('x2', X(xs[j])); cur.setAttribute('visibility', 'visible');
+    UI.tip(e, `<div class="muted">${xs[j] === 0 ? 'Início do culto' : f.relMin(xs[j])}</div>` + series.map(([nome, d]) =>
+      `<div class="row" style="gap:6px"><span class="swatch" style="background:${CORES[NOMES.indexOf(nome)]}"></span>${nome}: <b>${d.curva[j] == null ? '–' : Math.round(d.curva[j]) + '%'}</b></div>`).join(''));
+  });
+  $('hit-c').addEventListener('pointerleave', () => { cur.setAttribute('visibility', 'hidden'); UI.semTip(); });
+}
+
+function caixaPlanta(id) {
+  const [x0, y0, x1, y1] = LAYOUT.limites || [0, 0, 100, 50];
+  const el = $(id); el.style.aspectRatio = `${x1 - x0} / ${y1 - y0}`; return el;
+}
+function mapaUso(v) {
+  if (!LAYOUT) return;
+  SmartPlanta.criar(caixaPlanta('g-mapa'), LAYOUT).calor(v.uso_vagas_pct, 'do tempo ocupada durante os cultos');
+}
+
+function graficoCarros(v) {
+  const cs = v.cultos;
+  if (!cs.length) { $('g-carros').innerHTML = UI.vazio('Sem cultos no período'); $('leg-carros').innerHTML = ''; return; }
+  const W = 720, H = 260, m = { l: 36, r: 8, t: 12, b: 28 };
+  const max = Math.max(v.total_vagas, ...cs.map(c => c.carros));
+  const bw = (W - m.l - m.r) / cs.length, Y = n => m.t + (H - m.t - m.b) * (1 - n / max);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Carros por culto">`;
+  const passo = max <= 10 ? 2 : Math.ceil(max / 5 / 10) * 10;
+  for (let n = 0; n <= max; n += passo) s += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(n)}" y2="${Y(n)}" style="stroke:var(--grid)"/><text x="${m.l - 8}" y="${Y(n) + 4}" text-anchor="end">${n}</text>`;
+  cs.forEach((c, i) => {
+    const x = m.l + i * bw + bw * .18, w = Math.max(2, bw * .64), y = Y(c.carros), r = Math.min(3, w / 2);
+    s += `<path class="bc" data-i="${i}" tabindex="0" role="button" aria-label="${f.esc(c.culto)} de ${f.dataISO(c.data)}: ${c.carros} carros" d="M${x},${Y(0)} V${y + r} q0,-${r} ${r},-${r} h${w - 2 * r} q${r},0 ${r},${r} V${Y(0)} Z" style="fill:${CORES[c.culto_idx]}; cursor:pointer"/>`;
+  });
+  s += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v.total_vagas)}" y2="${Y(v.total_vagas)}" style="stroke:var(--danger)" stroke-dasharray="5 4"/>`;
+  const rot = Math.max(1, Math.ceil(cs.length / 8));
+  cs.forEach((c, i) => { if (i % rot === 0) s += `<text x="${m.l + i * bw + bw / 2}" y="${H - 8}" text-anchor="middle">${f.dataISO(c.data).slice(0, 5)}</text>`; });
+  $('g-carros').innerHTML = s + '</svg>';
+  const usados = [...new Set(cs.map(c => c.culto_idx))].sort();
+  $('leg-carros').innerHTML = usados.map(i => `<span><i style="background:${CORES[i]}"></i>${NOMES[i]}</span>`).join('') + `<span><i class="line" style="background:var(--danger)"></i>Total de vagas</span>`;
+  $('g-carros').querySelectorAll('.bc').forEach(el => {
+    const c = cs[el.dataset.i];
+    const html = `<b>${f.esc(c.culto)}</b> · ${f.dataISO(c.data)}<br>${c.carros} carros · média ${f.dur(c.tempo_medio_s)}<br><span class="muted">${c.lotou_min != null ? 'lotou ' + f.relMin(c.lotou_min) : 'não lotou'}</span>`;
+    el.addEventListener('pointermove', e => UI.tip(e, html));
+    el.addEventListener('pointerleave', UI.semTip);
+    el.addEventListener('click', () => abrirCulto(c));
+    el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrirCulto(c); } });
+  });
+}
+
+function categorias(v) {
+  const ordem = ['MEMBRO', 'IDOSO', 'PCD', 'EQUIPE', 'VISITANTE', 'SEM IDENTIFICAÇÃO'];
+  const tot = Object.values(v.categorias).reduce((a, b) => a + b, 0) || 1, max = Math.max(1, ...Object.values(v.categorias));
+  $('g-cats').innerHTML = ordem.filter(k => v.categorias[k]).map(k => `<div class="bar"><span>${k === 'SEM IDENTIFICAÇÃO' ? 'Fora da vaga indicada' : f.categoria(k)}</span>
+    <div class="track" role="img" aria-label="${Math.round(100 * v.categorias[k] / tot)}%"><div style="width:${100 * v.categorias[k] / max}%"></div></div><span class="v">${Math.round(100 * v.categorias[k] / tot)}%</span></div>`).join('') || UI.vazio('Sem dados no período');
+}
+
+function corredores(v) {
+  const zs = Object.entries(v.lotacao_corredores);
+  $('g-corredores').innerHTML = zs.length ? `<table class="table"><thead><tr><th scope="col">Corredor</th><th scope="col">Lota em média</th><th scope="col" class="n">Cultos em que lotou</th></tr></thead><tbody>` +
+    zs.map(([z, d]) => `<tr><td><b>${z}</b></td><td>${d.minuto_medio == null ? '<span class="subtle">não lotou</span>' : f.relMin(d.minuto_medio)}</td>
+      <td class="n">${d.cultos_que_lotou} <span class="subtle">de ${v.kpis.cultos}</span></td></tr>`).join('') + '</tbody></table>' : UI.vazio('Sem dados');
+}
+
+let tabCultos = null;
+function tabelaCultos(v) {
+  const cfg = {
+    linhas: v.cultos, porPagina: 10, ordenarPor: 'data', desc: true, aoClicar: abrirCulto,
+    vazio: UI.vazio('Nenhum culto no período', 'Escolha um período maior.'),
+    colunas: [
+      { id: 'data', titulo: 'Data', ordem: c => c.data, html: c => f.dataISO(c.data) },
+      { id: 'culto', titulo: 'Culto', ordem: c => c.culto, html: c => `<span class="row" style="gap:8px"><span class="swatch" style="background:${CORES[c.culto_idx]}"></span>${f.esc(c.culto)}</span>` },
+      { id: 'carros', titulo: 'Carros', num: true, ordem: c => c.carros, html: c => c.carros },
+      { id: 'ocup', titulo: 'Ocup. máx.', num: true, ordem: c => c.ocupacao_max_pct, html: c => Math.round(c.ocupacao_max_pct) + '%' },
+      { id: 'lot', titulo: 'Lotação', ordem: c => c.lotou_min ?? 999, html: c => c.lotou_min != null ? `<span class="badge badge--danger">Lotou ${f.relMin(c.lotou_min)}</span>` : '<span class="badge badge--success">Não lotou</span>' },
+      { id: 'cheg', titulo: 'Chegada típica', num: true, ordem: c => c.chegada_mediana_min, html: c => f.relMin(c.chegada_mediana_min) },
+      { id: 'tempo', titulo: 'Tempo médio', num: true, ordem: c => c.tempo_medio_s, html: c => f.dur(c.tempo_medio_s) },
+      { id: 'fora', titulo: 'Fora da vaga', num: true, ordem: c => c.fora_da_vaga, html: c => c.fora_da_vaga ? `<span class="badge badge--warning no-dot">${c.fora_da_vaga}</span>` : '0' },
+      { id: 'and', titulo: '', largo: true, html: c => c.em_andamento ? '<span class="badge badge--success">Em andamento</span>' : '<span class="subtle">—</span>' },
+    ],
+  };
+  if (tabCultos) tabCultos.atualizar(v.cultos, true); else tabCultos = UI.tabela($('t-cultos'), cfg);
+}
+
+function abrirCulto(c) {
+  $('c-de').value = c.data; $('c-ate').value = c.data; $('c-culto').value = c.culto_idx;
+  $('c-cat').value = ''; $('c-placa').value = ''; $('c-vaga').value = '';
+  irPara('consultas');
+}
+
+// ---------------------------------------------------------------- avisos
+let tabAvisos = null;
+async function carregarAvisos(dias) {
+  const a = await api('/api/admin/avisos?dias=' + dias), r = a.resumo;
+  $('kpis-avisos').innerHTML = [
+    ['Vezes que lotou', r.lotaram, 'no período'],
+    ['Avisados a tempo', `${r.avisados_a_tempo}<small> de ${r.lotaram}</small>`, 'aviso 5 min ou mais antes'],
+    ['Antecedência média', r.antecedencia_media_min == null ? '–' : Math.round(r.antecedencia_media_min) + '<small> min</small>', 'entre o aviso e a lotação'],
+    ['Alarmes falsos', r.alarmes_falsos, 'avisou e não lotou'],
+  ].map(([x, y, z]) => `<div class="stat"><dt>${x}</dt><dd>${y}</dd><span class="ctx">${z}</span></div>`).join('');
+  const tipo = { 'avisou a tempo': 'success', 'avisou em cima da hora': 'warning', 'lotou sem aviso': 'danger', 'alarme falso': 'warning', 'aguardando': '' };
+  const cfg = {
+    linhas: a.cultos, porPagina: 10, ordenarPor: 'data', desc: true,
+    vazio: UI.vazio('Nenhum aviso nem lotação no período', '', 'ok'),
+    colunas: [
+      { id: 'data', titulo: 'Data', ordem: c => c.data, html: c => f.dataISO(c.data) },
+      { id: 'culto', titulo: 'Culto', html: c => `<span class="row" style="gap:8px"><span class="swatch" style="background:${CORES[c.culto_idx]}"></span>${f.esc(c.culto)}</span>` },
+      { id: 'av', titulo: 'Primeiro aviso', num: true, html: c => f.relMin(c.aviso_rel_min) },
+      { id: 'prev', titulo: 'Previsão no aviso', num: true, html: c => c.previsto_min == null ? '–' : '~' + Math.round(c.previsto_min) + ' min' },
+      { id: 'lot', titulo: 'Lotou', num: true, html: c => f.relMin(c.lotou_rel_min) },
+      { id: 'ant', titulo: 'Antecedência', num: true, ordem: c => c.antecedencia_min ?? -1, html: c => c.antecedencia_min == null ? '–' : Math.round(c.antecedencia_min) + ' min' },
+      { id: 'res', titulo: 'Resultado', largo: true, ordem: c => c.resultado, html: c => `<span class="badge ${tipo[c.resultado] ? 'badge--' + tipo[c.resultado] : ''}">${f.esc(c.resultado[0].toUpperCase() + c.resultado.slice(1))}</span>` },
+    ],
+  };
+  if (tabAvisos) tabAvisos.atualizar(a.cultos, true); else tabAvisos = UI.tabela($('t-avisos'), cfg);
+}
+
+// ================================================================ CONSULTAS
+function parametrosConsulta() {
+  return new URLSearchParams({ de: $('c-de').value, ate: $('c-ate').value, culto: $('c-culto').value,
+    categoria: $('c-cat').value, placa: $('c-placa').value.trim().toUpperCase(), vaga: $('c-vaga').value.trim().toUpperCase() });
+}
+const filtrarPlaca = placa => { $('c-placa').value = placa; $('c-de').value = f.diasAtras(30); $('c-ate').value = f.hojeISO(); $('c-culto').value = ''; $('c-cat').value = ''; $('c-vaga').value = ''; };
+const tabConsulta = UI.tabela($('t-consulta'), {
+  linhas: [], porPagina: 25, ordenarPor: 'entrada', desc: true,
+  vazio: UI.vazio('Nada encontrado com esses filtros', 'Amplie o período ou limpe a placa e a vaga.', 'busca'),
+  colunas: [
+    { id: 'entrada', titulo: 'Data', ordem: p => p.entrada, html: p => f.data(p.entrada) },
+    { id: 'vaga', titulo: 'Vaga', ordem: p => p.vaga.padStart(4, '0'), html: p => `<b>${f.esc(p.vaga)}</b>` },
+    { id: 'placa', titulo: 'Placa', ordem: p => p.placa || '', html: p => p.placa ? `<button type="button" class="link placa" data-placa="${f.esc(p.placa)}" title="Ver todas as permanências desta placa">${f.esc(p.placa)}</button>` : '<span class="subtle">—</span>' },
+    { id: 'cat', titulo: 'Categoria', ordem: p => p.categoria || '', html: p => UI.catBadge(p.categoria) },
+    { id: 'cheg', titulo: 'Chegou', num: true, ordem: p => p.entrada % 86400, html: p => f.hora(p.entrada) },
+    { id: 'saiu', titulo: 'Saiu', num: true, html: p => p.saida ? f.hora(p.saida) : '<span class="subtle">–</span>' },
+    { id: 'dur', titulo: 'Tempo', num: true, ordem: p => p.duracao_s, html: p => f.dur(p.duracao_s) },
+    { id: 'sit', titulo: 'Situação', largo: true, html: p => (p.em_andamento ? '<span class="badge badge--success">Estacionado</span> ' : '') + (p.origem === 'desconhecida' ? '<span class="badge badge--warning">Fora da vaga indicada</span>' : '') || '<span class="subtle">—</span>' },
+  ],
+  depois: el => el.querySelectorAll('[data-placa]').forEach(b => b.onclick = () => { filtrarPlaca(b.dataset.placa); consultar(); }),
+});
+async function consultar() {
+  const q = parametrosConsulta();
+  $('c-csv').href = '/api/admin/permanencias?formato=csv&' + q;
+  $('t-consulta').innerHTML = UI.carregando(6);
+  const d = await api('/api/admin/permanencias?' + q);
+  if (d.erro) { $('c-resumo').innerHTML = `<span style="color:var(--danger-text)">${f.esc(d.erro)}</span>`; tabConsulta.atualizar([]); return; }
+  const ps = d.permanencias, media = ps.length ? ps.reduce((a, p) => a + p.duracao_s, 0) / ps.length : 0;
+  $('c-resumo').innerHTML = `<span><b>${f.num(ps.length)}</b> permanências</span><span>tempo médio <b>${ps.length ? f.dur(media) : '–'}</b></span>` +
+    (ps.length >= 500 ? '<span class="badge badge--info no-dot">Mostrando as 500 mais recentes: baixe o CSV para ver todas</span>' : '');
+  tabConsulta.atualizar(ps.slice(-500));
+}
+$('f-consulta').onsubmit = e => { e.preventDefault(); UI.enviando($('c-buscar'), consultar); };
+$('c-limpar').onclick = () => { $('c-de').value = f.diasAtras(7); $('c-ate').value = f.hojeISO(); ['c-culto', 'c-cat', 'c-placa', 'c-vaga'].forEach(i => $(i).value = ''); consultar(); };
+
+// ================================================================ CADASTRO
+const RE_PLACA = /^[A-Z]{3}-?\d[A-Z0-9]\d{2}$/;
+function erroPlaca(msg) {
+  const e = $('n-placa-e');
+  e.hidden = !msg; e.innerHTML = msg ? UI.icone('erro') + f.esc(msg) : '';
+  if (msg) $('n-placa').setAttribute('aria-invalid', 'true'); else $('n-placa').removeAttribute('aria-invalid');
+}
+$('n-placa').oninput = () => { $('n-placa').value = $('n-placa').value.toUpperCase().replace(/[^A-Z0-9-]/g, ''); erroPlaca(''); };
+$('f-cad').onsubmit = e => {
+  e.preventDefault();
+  const placa = $('n-placa').value.trim().toUpperCase();
+  if (!placa) { erroPlaca('Informe a placa.'); $('n-placa').focus(); return; }
+  if (!RE_PLACA.test(placa)) { erroPlaca('Placa inválida. Use ABC1D23 ou ABC1234.'); $('n-placa').focus(); return; }
+  UI.enviando($('n-salvar'), async () => {
+    const d = await api('/api/admin/veiculos', { method: 'POST', body: JSON.stringify({ placa, categoria: $('n-cat').value, apelido: $('n-apelido').value }) });
+    if (!d.ok) { erroPlaca(d.erro); $('n-placa').focus(); return; }   // os campos continuam preenchidos
+    UI.toast(`Placa ${d.placa} cadastrada como ${f.categoria(d.categoria)}.`, 'success');
+    $('f-cad').reset(); erroPlaca(''); carregarCadastro(); $('n-placa').focus();
+  });
+};
+
+const tabCad = UI.tabela($('t-cad'), {
+  linhas: [], porPagina: 20, ordenarPor: 'quando', desc: true,
+  vazio: UI.vazio('Nenhum veículo encontrado', 'Confira a busca ou cadastre uma placa no formulário acima.', 'carro'),
+  colunas: [
+    { id: 'placa', titulo: 'Placa', ordem: v => v.placa, html: v => `<span class="placa">${f.esc(v.placa)}</span>` },
+    { id: 'cat', titulo: 'Categoria', ordem: v => v.categoria, html: v => UI.catBadge(v.categoria) },
+    { id: 'apelido', titulo: 'Apelido', ordem: v => v.apelido || '', html: v => v.apelido ? f.esc(v.apelido) : '<span class="subtle">—</span>' },
+    { id: 'quando', titulo: 'Cadastrado em', ordem: v => v.consentimento_em, html: v => f.data(v.consentimento_em) },
+    { id: 'acoes', titulo: '', classe: 'acoes', html: v => `<button class="btn btn--sm" type="button" data-ver="${f.esc(v.placa)}">Ver histórico</button>
+        <button class="btn btn--sm btn--danger-ghost" type="button" data-del="${f.esc(v.placa)}" aria-label="Excluir ${f.esc(v.placa)}">${UI.icone('lixo')}Excluir</button>` },
+  ],
+  depois: el => {
+    el.querySelectorAll('[data-ver]').forEach(b => b.onclick = () => { filtrarPlaca(b.dataset.ver); irPara('consultas'); });
+    el.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+      const placa = b.dataset.del;
+      const ok = await UI.confirmar({ titulo: `Excluir ${placa}?`, texto: 'O cadastro é apagado e a placa sai de todo o histórico. Vagas e horários continuam, sem identificação. Não dá para desfazer.', acao: 'Excluir cadastro', perigo: true });
+      if (!ok) return;
+      const d = await api('/api/admin/veiculos?placa=' + encodeURIComponent(placa), { method: 'DELETE' });
+      UI.toast(d.ok ? `Cadastro ${placa} excluído e placa removida do histórico.` : (d.erro || 'Não foi possível excluir.'), d.ok ? 'success' : 'danger');
+      carregarCadastro();
+    });
+  },
+});
+async function carregarCadastro() {
+  const vs = await api('/api/admin/veiculos?busca=' + encodeURIComponent($('busca-cad').value.trim()));
+  $('cad-total').textContent = $('busca-cad').value.trim() ? `${vs.length} encontrado(s)` : `${vs.length} veículo(s) cadastrado(s)`;
+  tabCad.atualizar(vs);
+}
+let tBusca;
+$('busca-cad').oninput = () => { clearTimeout(tBusca); tBusca = setTimeout(carregarCadastro, 250); };
+
+// ================================================================ VISITANTES
+let VIS = [], visFiltro = 'todos', OFERTAR = 3;
+const STATUS_OFERTA = v => v.oferta === 'aceitou' ? (v.placa ? '<span class="badge badge--brand">Aceitou · falta cadastrar</span>' : '<span class="badge badge--brand">Aceitou</span>')
+  : v.oferta === 'recusou' ? '<span class="badge no-dot">Não quis</span>'
+  : v.visitas >= OFERTAR ? '<span class="badge badge--info">Oferecer na próxima visita</span>' : '<span class="subtle">—</span>';
+const tabVis = UI.tabela($('t-vis'), {
+  linhas: [], porPagina: 25, ordenarPor: 'ultima', desc: true,
+  vazio: UI.vazio('Nenhum visitante com esse filtro', 'Os visitantes aparecem aqui a partir da primeira entrada.', 'pessoas'),
+  colunas: [
+    { id: 'quem', titulo: 'Visitante', ordem: v => v.codigo, html: v => `<span class="row" style="gap:8px"><b class="mono">${v.codigo}</b>${v.placa ? `<span class="placa">${f.esc(v.placa)}</span>` : ''}${v.veio_hoje ? '<span class="badge badge--success">Veio hoje</span>' : ''}</span>` },
+    { id: 'visitas', titulo: 'Visitas', num: true, ordem: v => v.visitas, html: v => `<b>${v.visitas}</b>` },
+    { id: 'primeira', titulo: 'Primeira', ordem: v => v.primeira_dia, html: v => f.dataISO(v.primeira_dia) },
+    { id: 'ultima', titulo: 'Última', ordem: v => v.ultima_dia, html: v => f.dataISO(v.ultima_dia) },
+    { id: 'nec', titulo: 'Vaga', html: v => v.necessidade ? UI.catBadge(v.necessidade) : '<span class="subtle">comum</span>' },
+    { id: 'oferta', titulo: 'Cadastro', ordem: v => v.oferta || (v.visitas >= OFERTAR ? 'a' : 'z'), html: v => STATUS_OFERTA(v) +
+        (v.oferta === 'aceitou' && v.placa ? ` <button class="btn btn--sm btn--primary" type="button" data-cad="${f.esc(v.placa)}">Cadastrar</button>` : '') },
+    { id: 'dias', titulo: 'Dias das visitas', largo: true, html: v => `<span class="text-sm muted">${v.dias.map(d => f.dataISO(d.dia).slice(0, 5)).join(' · ')}</span>` },
+  ],
+  depois: el => el.querySelectorAll('[data-cad]').forEach(b => b.onclick = () => cadastrarVisitante(b.dataset.cad)),
+});
+function cadastrarVisitante(placa) {
+  $('n-placa').value = placa; $('n-cat').value = 'MEMBRO'; $('n-apelido').value = '';
+  irPara('cadastro');
+  setTimeout(() => { $('n-apelido').focus(); UI.toast(`Placa ${placa} preenchida. Confira o termo assinado e escolha a categoria.`, 'info'); }, 300);
+}
+function filtrarVisitantes() {
+  const q = $('vis-busca').value.trim().toUpperCase();
+  const ls = VIS.filter(v => visFiltro === 'todos' || (visFiltro === 'voltaram' && v.visitas >= 2) || (visFiltro === 'ofertar' && v.visitas >= OFERTAR)
+    || (visFiltro === 'pendente' && v.oferta === 'aceitou'))
+    .filter(v => !q || v.codigo.includes(q) || (v.placa || '').includes(q));
+  $('vis-sub').textContent = `${f.num(ls.length)} de ${f.num(VIS.length)} visitantes nos últimos 6 meses`;
+  tabVis.atualizar(ls);
+}
+document.querySelectorAll('#vis-filtro button').forEach(b => b.onclick = () => {
+  visFiltro = b.dataset.f; document.querySelectorAll('#vis-filtro button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); filtrarVisitantes();
+});
+$('vis-busca').oninput = filtrarVisitantes;
+async function carregarVisitantes() {
+  const d = await api('/api/admin/visitantes');
+  VIS = d.visitantes; OFERTAR = d.oferecer_a_partir_de; $('vis-ret').textContent = d.retencao_dias;
+  const n = VIS.length, voltaram = VIS.filter(v => v.visitas >= 2).length, tres = VIS.filter(v => v.visitas >= OFERTAR).length;
+  const aceit = VIS.filter(v => v.oferta === 'aceitou').length, recus = VIS.filter(v => v.oferta === 'recusou').length;
+  const pend = VIS.filter(v => v.oferta === 'aceitou' && v.placa);
+  $('kpis-vis').innerHTML = [
+    ['Visitantes', f.num(n), 'nos últimos 6 meses'],
+    ['Voltaram', `${f.num(voltaram)}<small> ${n ? Math.round(100 * voltaram / n) + '%' : ''}</small>`, 'vieram em 2 dias ou mais'],
+    [`Com ${OFERTAR}+ visitas`, f.num(tres), 'o corredor oferece o cadastro'],
+    ['Aceitaram o cadastro', `${aceit}<small> de ${aceit + recus}</small>`, 'entre os que receberam a oferta'],
+    ['Hoje', f.num(VIS.filter(v => v.veio_hoje).length), 'visitantes que vieram hoje'],
+  ].map(([x, y, z]) => `<div class="stat"><dt>${x}</dt><dd>${y}</dd><span class="ctx">${z}</span></div>`).join('');
+  $('pendentes').innerHTML = pend.length ? `<div class="alert alert--info">${UI.icone('info')}<div class="alert__body"><strong>${pend.length} visitante(s) aceitaram o cadastro</strong>
+    <p>Combine com a pessoa a assinatura do termo de consentimento e conclua o cadastro: ${pend.map(v => `<button class="link" type="button" data-cad="${f.esc(v.placa)}">${f.esc(v.placa)}</button>`).join(', ')}.</p></div></div>` : '';
+  $('pendentes').querySelectorAll('[data-cad]').forEach(b => b.onclick = () => cadastrarVisitante(b.dataset.cad));
+  filtrarVisitantes();
+}
+
+// ================================================================ SENSORES
+async function carregarSensores() {
+  const d = await api('/api/admin/saude');
+  const e = d.esp32 || {};
+  const espTxt = { online: 'Online', offline: 'Offline', demonstracao: 'Demonstração', desconhecido: 'Sem notícia' }[e.estado] || e.estado;
+  const espBadge = { online: 'success', offline: 'danger', demonstracao: 'info' }[e.estado] || '';
+  $('kpis-sensores').innerHTML = [
+    ['Sensores OK', `${d.resumo.ok}<small> de ${d.vagas.length}</small>`, 'funcionando normalmente'],
+    ['Precisam de atenção', d.resumo.atencao, 'comportamento estranho'],
+    ['Com falha', d.resumo.falha, 'verificar no local'],
+    ['Controlador (ESP32)', `<span class="badge ${espBadge ? 'badge--' + espBadge : ''}" style="font-size:13px; height:26px">${espTxt}</span>`, e.desde ? 'desde ' + f.dataHora(e.desde) : (e.estado === 'demonstracao' ? 'rodando sem hardware' : 'aguardando conexão')],
+  ].map(([x, y, z]) => `<div class="stat"><dt>${x}</dt><dd>${y}</dd><span class="ctx">${z}</span></div>`).join('');
+  const probs = d.vagas.flatMap(v => v.problemas.map(p => ({ ...p, vaga: v.vaga })));
+  probs.sort((a, b) => (b.gravidade === 'falha') - (a.gravidade === 'falha'));
+  $('problemas').innerHTML = probs.length ? probs.map(p => `<div class="problema ${p.gravidade}">${UI.icone(p.gravidade === 'falha' ? 'erro' : 'alerta')}
+      <b>Vaga ${f.esc(p.vaga)} · ${f.esc(p.titulo)}</b><span class="muted">${f.esc(p.detalhe)}</span><span>${f.esc(p.acao)}</span></div>`).join('')
+    : UI.vazio('Tudo certo com os sensores', 'Nenhum comportamento estranho nos últimos 14 dias.', 'ok');
+  const rot = { ok: 'OK', atencao: 'atenção', falha: 'falha' }, setores = {};
+  for (const v of d.vagas) (setores[v.zona] ||= []).push(v);
+  $('lista-sensores').innerHTML = Object.entries(setores).map(([z, vs]) => `<div class="sens-setor"><b>Setor ${z}</b>
+    <div class="chips">${vs.map(v => `<span class="chip-s ${v.estado}" tabindex="0" title="Vaga ${v.vaga} · ${rot[v.estado]} · ${v.ocupacoes_14d} ocupações em 14 dias · ${v.ultima_atividade ? 'última atividade ' + f.dataHora(v.ultima_atividade) : 'sem atividade'}" aria-label="Vaga ${v.vaga}: ${rot[v.estado]}">${v.vaga}</span>`).join('')}</div></div>`).join('');
+  if (LAYOUT) SmartPlanta.criar(caixaPlanta('mapa-sensores'), LAYOUT).saude(Object.fromEntries(d.vagas.map(v => [v.vaga, v.estado])));
+}
+
+// ================================================================ EVENTOS
+const NOME_EV = { ENTRADA: 'Entrada na cancela', VAGA_ATRIBUIDA: 'Vaga indicada', VAGA_OCUPADA: 'Vaga ocupada', VAGA_LIVRE: 'Vaga liberada',
+  LOTADO: 'Carro sem vaga', ALERTA_LOTACAO: 'Aviso de lotação', LOTOU: 'Estacionamento lotou', NECESSIDADE_DECLARADA: 'Pediu vaga preferencial' };
+const evDetalhe = e => { try { return JSON.parse(e.detalhe || '{}').msg || ''; } catch (x) { return ''; } };
+const necDetalhe = e => { try { const d = JSON.parse(e.detalhe || '{}'); return `${d.necessidade ? (d.necessidade === 'PCD' ? 'PcD' : 'idoso') : 'voltou para comum'} · pelo ${d.origem === 'equipe' ? 'painel da equipe' : 'tablet'}`; } catch (x) { return ''; } };
+const tabEv = UI.tabela($('t-eventos'), {
+  linhas: [], porPagina: 30, ordenarPor: 'quando', desc: true,
+  vazio: UI.vazio('Nenhum evento', 'Os eventos aparecem aqui assim que a cancela e os sensores registram algo.', 'lista'),
+  colunas: [
+    { id: 'quando', titulo: 'Quando', ordem: e => e.instante, html: e => `${f.data(e.instante)} <span class="subtle">${f.horaSeg(e.instante)}</span>` },
+    { id: 'tipo', titulo: 'Evento', ordem: e => e.tipo, html: e => ['LOTADO', 'LOTOU'].includes(e.tipo) ? `<span class="badge badge--danger">${NOME_EV[e.tipo]}</span>`
+        : e.tipo === 'ALERTA_LOTACAO' ? `<span class="badge badge--warning">${NOME_EV[e.tipo]}</span> <span class="muted">${f.esc(evDetalhe(e))}</span>`
+        : e.tipo === 'NECESSIDADE_DECLARADA' ? `<span class="badge badge--info">${NOME_EV[e.tipo]}</span> <span class="muted">${f.esc(necDetalhe(e))}</span>` : (NOME_EV[e.tipo] || f.esc(e.tipo)) },
+    { id: 'placa', titulo: 'Placa', html: e => e.placa ? `<span class="placa">${f.esc(e.placa)}</span>` : '<span class="subtle">—</span>' },
+    { id: 'cat', titulo: 'Categoria', html: e => UI.catBadge(e.categoria) },
+    { id: 'vaga', titulo: 'Vaga', html: e => e.vaga ? `<b>${f.esc(e.vaga)}</b>` : '<span class="subtle">—</span>' },
+  ],
+});
+async function carregarEventos() {
+  $('t-eventos').innerHTML = UI.carregando(8);
+  const es = await api('/api/admin/eventos?tipo=' + $('e-tipo').value);
+  $('ev-total').textContent = `${f.num(es.length)} evento(s) mais recentes`;
+  tabEv.atualizar(es);
+}
+$('e-tipo').onchange = carregarEventos;
+
+// ================================================================ início
+async function iniciar() {
+  const me = await fetch('/api/sessao').then(r => r.json()).catch(() => ({}));
+  if (!me.admin) return mostrarLogin();
+  const info = await api('/api/admin/me');
+  NOMES = info.nomes_culto; LAYOUT = info.layout;
+  $('c-culto').innerHTML = '<option value="">Todos</option>' + NOMES.map((n, i) => `<option value="${i}">${n}</option>`).join('');
+  if (!$('c-de').value) { $('c-de').value = f.diasAtras(7); $('c-ate').value = f.hojeISO(); }
+  $('tela-login').hidden = true; $('app').hidden = false;
+  UI.definirLogado(true);
+  abrirSecao(location.hash.slice(1) || 'visao'); aoVivo();
+}
+setInterval(aoVivo, 3000);
+setInterval(() => { if (!$('app').hidden && secaoAtual === 'visao' && !document.hidden) carregarVisao().catch(() => {}); }, 60000);
+iniciar();
+</script>
+</body>
+</html>

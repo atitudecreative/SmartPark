@@ -1,0 +1,624 @@
+<title>Smart Park — Simulador</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&family=Overpass+Mono:wght@400;600&display=swap">
+<style>
+/* Ponto médio (·) no Overpass engole o espaço seguinte: esse caractere vem de outra fonte. */
+@font-face { font-family: "SP Ponto"; src: local("Helvetica Neue"), local("Arial"), local("Liberation Sans"); unicode-range: U+00B7; }
+/* Usei as mesmas cores e fontes do resto do sistema (raspberry/scripts/estilo.css).
+   Layout: a planta do estacionamento no centro; guarita e métricas ao lado; comparação embaixo.
+   Linguagem visual de sinalização viária: tipografia Overpass (derivada da Highway Gothic), amarelo de faixa, asfalto. */
+:root {
+  --bg: #f5f6f8;
+  --card: #ffffff;
+  --ink: #12161b;
+  --sub: #4b5461;
+  --linha: #e2e5ea;
+  --asfalto: #3d434a;
+  --faixa: #f2b705;
+  --tinta: #f4f5f6;
+  --grama: #d9e3d6;
+  --predio: #c9ced3;
+  --pref: #2a78d6;
+  --c-geral: #e9ebee;
+  --c-prio: #3987e5;
+  --c-equipe: #8f84e8;
+  --c-visit: #1baf7a;
+  --freio: #e34948;
+  --s1: #2f6fd0; --s2: #d0581f; --s3: #148a62; --s4: #b07d00;
+  --display: "SP Ponto", "Overpass", "Helvetica Neue", Arial, sans-serif;
+  --mono: "SP Ponto", "Overpass Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0d10; --card: #111418; --ink: #eceff2; --sub: #a7afb9; --linha: #242a31;
+    --asfalto: #2c3137; --tinta: #d9dcdf; --grama: #18201a; --predio: #262c32;
+    --s1: #4c8fe8; --s2: #e0703a; --s3: #22a878; --s4: #d39a12;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b0d10; --card: #111418; --ink: #eceff2; --sub: #a7afb9; --linha: #242a31;
+  --asfalto: #2c3137; --tinta: #d9dcdf; --grama: #18201a; --predio: #262c32;
+  --s1: #4c8fe8; --s2: #e0703a; --s3: #22a878; --s4: #d39a12;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--display); margin: 0; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-inline: clamp(16px, 3vw, 32px); padding-block: 24px 48px; display: grid; gap: 20px; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 20px; }
+.placa-marca { display: inline-grid; place-items: center; width: 44px; height: 44px; background: var(--faixa); color: #16191d; font-weight: 800; font-size: 24px; transform: rotate(45deg); border-radius: 6px; }
+.placa-marca span { transform: rotate(-45deg); }
+h1 { font-size: clamp(22px, 3vw, 30px); font-weight: 800; letter-spacing: .04em; margin: 0; text-transform: uppercase; line-height: 1.1; }
+.sub { color: var(--sub); margin: 2px 0 0; }
+.barra { display: flex; flex-wrap: wrap; gap: 12px 22px; align-items: end; background: var(--card); border: 1px solid var(--linha); border-radius: 12px; padding: 14px 16px; }
+.campo { display: grid; gap: 6px; min-width: 0; }
+.rot { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--sub); }
+select, button { font: inherit; color: var(--ink); }
+select { background: var(--bg); border: 1px solid var(--linha); border-radius: 8px; padding: 7px 10px; max-width: 100%; }
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--linha); border-radius: 8px; overflow: hidden; }
+.seg button { background: transparent; border: 0; border-right: 1px solid var(--linha); padding: 7px 12px; cursor: pointer; font-weight: 600; font-size: 14px; display: inline-flex; gap: 7px; align-items: center; }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.seg i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.acoes { display: flex; gap: 8px; margin-left: auto; }
+.btn { background: var(--faixa); color: #16191d; border: 0; border-radius: 8px; padding: 8px 16px; font-weight: 800; cursor: pointer; letter-spacing: .02em; }
+.btn.sec { background: transparent; color: var(--ink); border: 1px solid var(--linha); font-weight: 600; }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--faixa); outline-offset: 2px; }
+.palco { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; }
+.mapa { background: var(--card); border: 1px solid var(--linha); border-radius: 12px; padding: 10px; min-width: 0; }
+.mapa-wrap { position: relative; width: 100%; aspect-ratio: 200 / 112; border-radius: 8px; overflow: hidden; background: #0c0f12; }
+#planta, #tela { position: absolute; inset: 0; width: 100%; height: 100%; }
+#tela { pointer-events: none; }
+.legenda { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 10px 6px 2px; color: var(--sub); font-size: 13px; }
+.legenda span { display: inline-flex; align-items: center; gap: 6px; }
+.legenda i { width: 14px; height: 8px; border-radius: 2px; display: inline-block; }
+aside { display: grid; gap: 14px; min-width: 0; }
+.guarita { background: var(--asfalto); color: #f4f5f6; border-radius: 12px; padding: 16px; display: grid; gap: 10px; }
+.guarita .rot { color: #b9c0c7; }
+.mercosul { width: 100%; max-width: 230px; border: 2px solid #1b1f24; border-radius: 6px; overflow: hidden; background: #fff; color: #111; text-align: center; }
+.mercosul .faixa-azul { background: #003399; color: #fff; font: 600 9px/1 var(--display); letter-spacing: .2em; padding: 3px 0; }
+.mercosul .num { font: 700 26px/1.2 var(--mono); letter-spacing: .12em; padding: 2px 0 1px; }
+.linha-vaga { display: flex; align-items: center; gap: 14px; }
+.vaga-big { font: 800 56px/1 var(--display); letter-spacing: .02em; }
+.seta { width: 46px; height: 46px; color: var(--faixa); transition: transform .35s; }
+.chip { display: inline-block; font-size: 12px; font-weight: 800; letter-spacing: .08em; padding: 3px 9px; border-radius: 99px; background: #4a5159; }
+.instr { margin: 0; padding-left: 18px; color: #d0d5da; font-size: 13px; }
+.msg { font-size: 14px; color: #f4f5f6; }
+.metricas { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px 16px; padding: 14px 6px 4px; border-top: 1px solid var(--linha); margin-top: 8px; }
+.ocupacao { background: var(--card); border: 1px solid var(--linha); border-radius: 12px; padding: 14px 16px; display: grid; gap: 10px; }
+.met b { display: block; font: 600 22px/1.15 var(--mono); font-variant-numeric: tabular-nums; }
+.met small { color: var(--sub); font-size: 12px; }
+.zonas { display: grid; gap: 8px; }
+.zona { display: grid; grid-template-columns: 18px 1fr 44px; align-items: center; gap: 8px; font: 600 13px var(--mono); }
+.trilho { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+.trilho div { height: 100%; background: var(--sub); border-radius: 4px; transition: width .3s; }
+section.comparar { background: var(--card); border: 1px solid var(--linha); border-radius: 12px; padding: 20px; display: grid; gap: 14px; }
+h2 { font-size: 20px; font-weight: 800; margin: 0; text-wrap: balance; }
+.texto { color: var(--sub); max-width: 72ch; margin: 0; }
+.grafico { overflow-x: auto; }
+.grafico svg { display: block; min-width: 640px; width: 100%; height: auto; }
+.tabela-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 520px; }
+th, td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--linha); font-variant-numeric: tabular-nums; }
+th:first-child, td:first-child { text-align: left; }
+th { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--sub); font-weight: 600; }
+td.melhor { font-weight: 800; }
+.progresso { color: var(--sub); font: 13px var(--mono); }
+footer { color: var(--sub); font-size: 13px; max-width: 90ch; }
+@media (max-width: 900px) { .palco { grid-template-columns: 1fr; } .acoes { margin-left: 0; } }
+@media (prefers-reduced-motion: reduce) { .seta, .trilho div { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="placa-marca" aria-hidden="true"><span>P</span></div>
+    <div>
+      <h1>Smart Park</h1>
+      <p class="sub">Simulador da planta do estacionamento da Igreja Batista Atitude (250 vagas) · TCC de Engenharia</p>
+    </div>
+  </header>
+
+  <div class="barra" role="group" aria-label="Controles da simulação">
+    <label class="campo" for="cenario"><span class="rot">Culto</span>
+      <select id="cenario"></select>
+    </label>
+    <div class="campo"><span class="rot">Estratégia da guarita</span>
+      <div class="seg" id="estrategias"></div>
+    </div>
+    <div class="campo"><span class="rot">Velocidade</span>
+      <div class="seg" id="velocidades"></div>
+    </div>
+    <div class="acoes">
+      <button class="btn" id="play">Pausar</button>
+      <button class="btn sec" id="reiniciar">Novo sorteio</button>
+    </div>
+  </div>
+
+  <div class="palco">
+    <div class="mapa">
+      <div class="mapa-wrap" id="mapa-wrap"><div id="planta"></div><canvas id="tela" aria-hidden="true"></canvas></div>
+      <div class="legenda">
+        <span>Carros andando, por categoria:</span>
+        <span><i style="background:var(--c-geral)"></i>membro</span>
+        <span><i style="background:var(--c-prio)"></i>idoso / PcD</span>
+        <span><i style="background:var(--c-equipe)"></i>equipe</span>
+        <span><i style="background:var(--c-visit)"></i>visitante</span>
+        <span><i style="background:var(--freio)"></i>luz de freio: parado na fila</span>
+        <span><i style="background:rgba(242,183,5,.7)"></i>vaga reservada · tracejado amarelo: rota do último carro</span>
+      </div>
+      <div class="metricas">
+        <div class="met"><span class="rot">Horário</span><b id="m-relogio">--</b><small>em relação ao culto</small></div>
+        <div class="met"><span class="rot">Estacionados</span><b id="m-est">0</b><small id="m-tot">de 0 previstos</small></div>
+        <div class="met"><span class="rot">Até a vaga</span><b id="m-tempo">--</b><small>média, depois da cancela</small></div>
+        <div class="met"><span class="rot">Parado em fila</span><b id="m-parado">--</b><small>média por carro</small></div>
+        <div class="met"><span class="rot">Fila na cancela</span><b id="m-fila">0</b><small>carros agora</small></div>
+        <div class="met"><span class="rot">Previsão 5 min</span><b id="m-prev">--</b><small id="m-prev-s">só na estratégia preditiva</small></div>
+      </div>
+    </div>
+    <aside>
+      <div class="guarita" aria-live="polite">
+        <span class="rot">Guarita · último veículo</span>
+        <div class="mercosul"><div class="faixa-azul">BRASIL</div><div class="num" id="g-placa">-------</div></div>
+        <div><span class="chip" id="g-cat">--</span></div>
+        <span class="rot">Sua vaga</span>
+        <div class="linha-vaga"><div class="vaga-big" id="g-vaga">--</div>
+          <svg class="seta" id="g-seta" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 6 L90 50 H64 V94 H36 V50 H10 Z" fill="currentColor"/></svg></div>
+        <ol class="instr" id="g-instr"></ol>
+        <div class="msg" id="g-msg">Aguardando o primeiro carro.</div>
+      </div>
+      <div class="ocupacao"><span class="rot">Ocupação por corredor</span><div class="zonas" id="zonas"></div></div>
+    </aside>
+  </div>
+
+  <section class="comparar" id="comparar">
+    <h2>Quanto o sistema economiza</h2>
+    <p class="texto">Tempo médio entre a chegada à cancela e a chegada a pé na porta da igreja (dirigir, ficar parado, manobrar e caminhar). Experimento em Python no estacionamento de referência (48 vagas), com 20 cultos sorteados por cenário e as mesmas chegadas para as quatro estratégias.</p>
+    <div class="grafico" id="grafico-python"></div>
+    <h2>Rode você mesmo</h2>
+    <p class="texto">Sorteia 4 cultos do cenário escolhido acima e roda as quatro estratégias aqui no navegador, na planta de 250 vagas (leva alguns segundos). No navegador a previsão usa o perfil histórico ajustado pelas chegadas recentes; no Raspberry Pi ela vem do modelo Random Forest.</p>
+    <div><button class="btn" id="rodar">Comparar estratégias neste culto</button> <span class="progresso" id="progresso"></span></div>
+    <div class="tabela-wrap" id="tabela"></div>
+  </section>
+
+  <footer>Modelo de tráfego: uma faixa por sentido, distância mínima de 7 m entre carros, velocidade de 14 km/h nas vias e 9 km/h nos corredores, manobra de 12 a 24 s que bloqueia o corredor. Cancela: 3,5 s por carro (a câmera lê a placa enquanto o carro se aproxima). Volume de carros proporcional às 250 vagas. Placas sorteadas e fictícias; 7% das leituras falham e o carro é tratado como visitante. Os volumes e horários de chegada são hipóteses iniciais, a serem substituídas pela contagem real na guarita.</footer>
+</div>
+
+<script>
+__PLANTA_JS__
+</script>
+<script>
+const D = __DADOS__;
+
+// ===================================================================== aleatoriedade
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+class RNG {
+  constructor(s) { this.r = mulberry32(s); }
+  random() { return this.r(); }
+  uniform(a, b) { return a + (b - a) * this.r(); }
+  gauss(m, s) { let u = 0; while (u === 0) u = this.r(); return m + s * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * this.r()); }
+  choices(items, w) { let x = this.r() * w.reduce((a, b) => a + b, 0); for (let i = 0; i < items.length; i++) { x -= w[i]; if (x <= 0) return items[i]; } return items[items.length - 1]; }
+}
+const LETRAS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const placa = r => [0, 1, 2].map(() => LETRAS[Math.floor(r.random() * 26)]).join('') + Math.floor(r.random() * 10) + LETRAS[Math.floor(r.random() * 26)] + String(Math.floor(r.random() * 100)).padStart(2, '0');
+
+// ===================================================================== cenários e chegadas
+const ESCALA = D.layout.vagas.length / 48;   // perfis medidos para 48 vagas; a planta tem 250
+const CENARIOS = D.cultos.map((c, i) => ({ ...c, volume: c.volume * ESCALA, idx: i }));
+CENARIOS.push({ nome: 'Evento especial (estresse)', volume: 47 * ESCALA, pico: -8, disp: 3, atras: .05, mix: D.cultos[0].mix, idx: 0 });
+
+function gerarChegadas(c, r) {
+  const fv = Math.exp(r.gauss(0, .18)), desl = r.gauss(0, 3);
+  const n = Math.max(5, Math.round(r.gauss(c.volume * fv, c.volume * .05)));
+  const cats = Object.keys(c.mix), pesos = cats.map(k => c.mix[k]);
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const cat = r.choices(cats, pesos);
+    let t = cat === 'EQUIPE' ? r.gauss(-40, 5) : (r.random() < c.atras ? r.uniform(0, 15) : r.gauss(c.pico + desl, c.disp));
+    t = Math.min(Math.max(t, -50), 19);
+    out.push({ t, placa: placa(r), cat });
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+
+// ===================================================================== grafo
+const LAY = D.layout;
+const NOS = Object.fromEntries(LAY.nos.map(n => [n.id, n]));
+const ADJ = {}; LAY.nos.forEach(n => ADJ[n.id] = []);
+const AR = {}, COMP = {}, TIPO = {}, ZONA_AR = {};
+for (const e of LAY.arestas) {
+  ADJ[e.a].push(e.b); ADJ[e.b].push(e.a);
+  for (const k of [e.a + '|' + e.b, e.b + '|' + e.a]) { AR[k] = e; COMP[k] = e.comprimento; TIPO[k] = e.tipo; ZONA_AR[k] = e.zona; }
+}
+const VAGAS = LAY.vagas, VG = Object.fromEntries(VAGAS.map(v => [v.id, v]));
+const ZONAS = [...new Set(VAGAS.map(v => v.zona))];
+const caminhada = v => Math.hypot(v.x - LAY.porta[0], v.y - LAY.porta[1]);
+const chave = (a, b) => a < b ? a + '|' + b : b + '|' + a;
+const nomeNo = id => NOS[id].nome || id;
+const ARTIGO = n => ['esquina', 'via', 'guarita', 'saída', 'entrada'].includes(n.split(' ')[0]) ? 'Na' : 'No';
+
+const V_VIA = 4, V_COR = 2.5, DENS = 1 / 7, MANOBRA = 18, V_CAM = 1.2, DT = .5, GAP = 7, V_BUSCA = 1.8, T_CANCELA = LAY.tempo_cancela || 6;
+const ENTRADA_AR = LAY.entrada + '|' + ADJ[LAY.entrada][0];
+
+function aEstrela(origem, destino, custo, vmax) {
+  const alvo = NOS[destino], h = n => Math.hypot(NOS[n].x - alvo.x, NOS[n].y - alvo.y) / vmax;
+  const g = { [origem]: 0 }, pai = {}, aberto = [[h(origem), 0, origem]];
+  while (aberto.length) {
+    aberto.sort((a, b) => a[0] - b[0]);
+    const [, gn, n] = aberto.shift();
+    if (n === destino) { const cam = [n]; let x = n; while (pai[x]) { x = pai[x]; cam.push(x); } return [gn, cam.reverse()]; }
+    if (gn > (g[n] ?? Infinity)) continue;
+    for (const v of ADJ[n]) { const ng = gn + custo(n, v); if (ng < (g[v] ?? Infinity)) { g[v] = ng; pai[v] = n; aberto.push([ng + h(v), ng, v]); } }
+  }
+  return [Infinity, []];
+}
+
+function rotaAteVaga(v, custo, parcial, vmax) {
+  const [a, b] = v.aresta, L = COMP[a + '|' + b];
+  let melhor = null;
+  for (const [ent, sai, off] of [[a, b, v.offset], [b, a, L - v.offset]]) {
+    let [c, cam] = aEstrela(LAY.entrada, ent, custo, vmax);
+    if (!cam.length || cam.includes(sai)) continue;
+    c += parcial(ent, sai, off);
+    const arestas = cam.slice(0, -1).map((n, i) => [n, cam[i + 1]]).concat([[ent, sai]]);
+    if (!melhor || c < melhor[0]) melhor = [c, arestas, off];
+  }
+  return melhor || [Infinity, [], 0];
+}
+
+function instrucoes(arestas, vaga) {
+  const out = [];
+  for (let i = 0; i < arestas.length - 1; i++) {
+    const [a, b] = arestas[i], [, c] = arestas[i + 1];
+    const na = NOS[a], nb = NOS[b], nc = NOS[c];
+    const cruz = (nb.x - na.x) * (nc.y - nb.y) - (nb.y - na.y) * (nc.x - nb.x);
+    if (Math.abs(cruz) > 1e-6) out.push(`${ARTIGO(nomeNo(b))} ${nomeNo(b)}, vire à ${cruz < 0 ? 'esquerda' : 'direita'}`);
+  }
+  if (!out.length) out.push('Siga em frente');
+  const v = VG[vaga], [ua, ub] = arestas[arestas.length - 1];
+  const mesmo = ua === v.aresta[0] && ub === v.aresta[1];
+  out.push(`Vaga ${vaga} à ${(v.lado > 0) === mesmo ? 'direita' : 'esquerda'}`);
+  return out;
+}
+function pontosRota(arestas, off, vaga) {
+  const pts = [[NOS[arestas[0][0]].x, NOS[arestas[0][0]].y]];
+  for (const [, b] of arestas.slice(0, -1)) pts.push([NOS[b].x, NOS[b].y]);
+  const [a, b] = arestas[arestas.length - 1], L = COMP[a + '|' + b], f = L ? off / L : 0;
+  pts.push([NOS[a].x + (NOS[b].x - NOS[a].x) * f, NOS[a].y + (NOS[b].y - NOS[a].y) * f], [VG[vaga].x, VG[vaga].y]);
+  return pts;
+}
+const setaDe = instr => { for (const i of instr) { if (i.includes('esquerda')) return 'ESQUERDA'; if (i.includes('direita')) return 'DIREITA'; } return 'FRENTE'; };
+
+// ===================================================================== alocador (igual a smartpark/alocador.py)
+function decidir(estrategia, cat, est) {
+  const livres = VAGAS.filter(v => est.livres.has(v.id));
+  const com = livres.filter(v => v.tipo === 'comum');
+  let cand = com;
+  if (cat === 'IDOSO' || cat === 'PCD') {
+    const propria = cat === 'IDOSO' ? 'idoso' : 'pcd', outra = propria === 'idoso' ? 'pcd' : 'idoso';
+    const p1 = livres.filter(v => v.tipo === propria), p2 = livres.filter(v => v.tipo === outra);
+    cand = p1.length ? p1 : p2.length ? p2 : com;
+  }
+  if (!cand.length) return null;
+  const w = estrategia === 'reativa' ? 1 : estrategia === 'preditiva' ? Math.min(4, .4 + (est.prev || 0) / 4) : 0;
+  const carga = {}, resCor = {};
+  for (const r of est.transito) {
+    for (const [a, b] of r.arestas) { const k = chave(a, b); carga[k] = (carga[k] || 0) + 1; }
+    const v = VG[r.vaga]; (resCor[chave(...v.aresta)] ||= []).push([v, r.arestas[r.arestas.length - 1]]);
+  }
+  const estatico = estrategia === 'mais_proxima';
+  const tgs = (a, b, L, n) => { const vm = TIPO[a + '|' + b] === 'corredor' ? V_COR : V_VIA; const v = Math.max(.15 * vm, vm * (1 - (n / Math.max(L, 1)) / DENS)); return [L / v, L / vm]; };
+  const custo = (a, b) => { const L = COMP[a + '|' + b]; if (estatico) return L; const [tc, tl] = tgs(a, b, L, carga[chave(a, b)] || 0); return tl + w * (tc - tl); };
+  const parcial = (a, b, off) => {
+    if (estatico) return off;
+    const L = COMP[a + '|' + b]; const [tc, tl] = tgs(a, b, off, carga[chave(a, b)] || 0);
+    let bloq = 0;
+    for (const [o, ult] of (resCor[chave(a, b)] || [])) { const offO = ult[0] === o.aresta[0] ? o.offset : L - o.offset; if (ult[0] === a && ult[1] === b && offO < off) bloq++; }
+    return tl + w * ((tc - tl) + bloq * MANOBRA * .5);
+  };
+  let best = null;
+  for (const v of cand) {
+    let [c, arestas, off] = rotaAteVaga(v, custo, parcial, estatico ? 1 : V_VIA);
+    if (!estatico) c += (cat === 'IDOSO' || cat === 'PCD') ? 1.0 * caminhada(v) / 0.8 : .3 * caminhada(v) / V_CAM;   // igual ao alocador.py
+    // ordem de proximidade: PcD, idosos e visitantes > membros > equipe e voluntários
+    const tabela = cat === 'EQUIPE' ? (LAY.penalidade_equipe || { A: 300, B: 120 }) : cat === 'MEMBRO' ? (LAY.penalidade_membro || { A: 45 }) : {};
+    const pen = tabela[v.zona] || 0; if (pen) c += estatico ? pen * 4.0 : pen;   // metros = segundos × 4 m/s
+    if (!best || c < best.c) best = { vaga: v.id, arestas, off, c };
+  }
+  return best;
+}
+
+// ===================================================================== motor (igual a simulador/motor.py)
+const ROTEIRO_BUSCA = (LAY.roteiro_busca || []).map(e => e.join('|'));
+const PERFIL = D.perfil;
+
+class Sim {
+  constructor(chegadas, estrategia, cultoIdx, seed) {
+    this.est = estrategia; this.culto = cultoIdx; this.rng = new RNG(seed * 7919 + 13);
+    this.carros = chegadas.map((c, i) => ({ id: i, ch: c, tc: c.t * 60, estado: 'fila', rota: [], i: 0, pos: 0, alvo: null, vaga: null, busca: false, tfm: 0, tsc: null, test: null, cat: null, parado: 0, freando: false, naFila: false }));
+    this.t = Math.min(...this.carros.map(c => c.tc)) - 1;
+    this.ocup = {}; VAGAS.forEach(v => this.ocup[v.id] = false);
+    this.reservada = {}; this.reservas = new Map(); this.fila = []; this.atend = null; this.tfa = 0;
+    this.entradas = []; this.maxFila = 0; this.prev = null; this.tPrev = -1e9; this.ultimo = null; this.fim = false;
+  }
+  naAresta(k) { return this.carros.filter(c => (c.estado === 'movendo' || c.estado === 'manobrando') && c.rota[c.i] === k); }
+  bloqRev(k) { const [a, b] = k.split('|'), rev = b + '|' + a, L = COMP[k]; return this.carros.filter(c => c.estado === 'manobrando' && c.rota[c.i] === rev).map(c => L - c.pos); }
+  prever() {
+    const t = this.t / 60, p = PERFIL[this.culto] || {}, f = m => ESCALA * (p[Math.round(m)] || 0);
+    const obs = this.entradas.filter(x => x > t - 10 && x <= t).length, esp = f(t - 10) + f(t - 5);
+    return f(t) * Math.min(2, Math.max(.5, (obs + 1) / (esp + 1)));
+  }
+  lerPlaca(c) {  // simulo 4% de placas ilegíveis + 3% com caractere trocado => viram visitante
+    return this.rng.random() < .07 ? 'VISITANTE' : c.ch.cat;
+  }
+  atender(c) {
+    const cat = this.lerPlaca(c); c.cat = cat;
+    if (this.est === 'sem_sistema') {
+      c.busca = true; c.rota = ROTEIRO_BUSCA.slice();
+      this.ultimo = { placa: c.ch.placa, cat, vaga: '?', seta: 'FRENTE', instr: ['Sem orientação: procure vaga pela via da igreja e pelos corredores'], msg: 'O motorista procura sozinho.' };
+      return true;
+    }
+    if (this.est === 'preditiva' && this.t - this.tPrev >= 30) { this.prev = this.prever(); this.tPrev = this.t; }
+    const livres = new Set(VAGAS.filter(v => !this.ocup[v.id] && !(v.id in this.reservada)).map(v => v.id));
+    const dec = decidir(this.est, cat, { livres, transito: [...this.reservas.values()], prev: this.est === 'preditiva' ? this.prev : null });
+    if (!dec) { c.estado = 'rejeitado'; this.ultimo = { placa: c.ch.placa, cat, vaga: '--', seta: 'PARE', instr: [], msg: 'Estacionamento lotado. Procure a recepção.' }; return false; }
+    c.vaga = dec.vaga; c.rota = dec.arestas.map(([a, b]) => a + '|' + b); c.alvo = dec.off;
+    this.reservada[dec.vaga] = c.id; this.reservas.set(c.id, { vaga: dec.vaga, arestas: dec.arestas });
+    const instr = instrucoes(dec.arestas, dec.vaga);
+    this.ultimo = { placa: c.ch.placa, cat, vaga: dec.vaga, seta: setaDe(instr), instr, msg: cat === 'VISITANTE' ? 'Seja bem-vindo, visitante!' : 'Bom culto!',
+      pontos: pontosRota(dec.arestas, dec.off, dec.vaga), carro: c.id };
+    return true;
+  }
+  cancela() {
+    for (const c of this.carros) if (c.estado === 'fila' && c.tc <= this.t && !c.naFila) { c.naFila = true; this.fila.push(c); this.entradas.push(c.tc / 60); }
+    this.maxFila = Math.max(this.maxFila, this.fila.length);
+    if (this.atend && this.t >= this.tfa) {
+      const c = this.atend;
+      if (this.naAresta(ENTRADA_AR).every(o => o.pos >= GAP)) { if (this.atender(c)) { c.estado = 'movendo'; c.i = 0; c.pos = 0; c.tsc = this.t; } this.atend = null; }
+    }
+    if (!this.atend && this.fila.length) { this.atend = this.fila.shift(); this.atend.estado = 'atendimento'; this.tfa = this.t + T_CANCELA; }
+  }
+  vmax(c, k) { return TIPO[k] === 'corredor' ? (c.busca ? V_BUSCA : V_COR) : V_VIA; }
+  procurar(c, k, de, ate) {
+    const [a, b] = k.split('|'), L = COMP[k]; let melhor = null;
+    for (const v of VAGAS) {
+      let off;
+      if (v.aresta[0] === a && v.aresta[1] === b) off = v.offset; else if (v.aresta[0] === b && v.aresta[1] === a) off = L - v.offset; else continue;
+      if (off >= de - .01 && off <= ate + 2.6 && !this.ocup[v.id] && !(v.id in this.reservada)) {
+        if (v.tipo !== 'comum' && !(c.ch.cat === 'IDOSO' || c.ch.cat === 'PCD')) continue;
+        if (!melhor || off < melhor[0]) melhor = [off, v.id];
+      }
+    }
+    if (!melhor) return null;
+    c.vaga = melhor[1]; this.reservada[melhor[1]] = c.id; return melhor[0];
+  }
+  mover() {
+    const por = {};
+    for (const c of this.carros) if (c.estado === 'movendo' || c.estado === 'manobrando') (por[c.rota[c.i]] ||= []).push(c);
+    for (const c of this.carros) if (c.estado === 'manobrando' && this.t >= c.tfm) {
+      c.estado = 'estacionado'; c.test = this.t; this.ocup[c.vaga] = true; delete this.reservada[c.vaga]; this.reservas.delete(c.id);
+      const l = por[c.rota[c.i]]; l.splice(l.indexOf(c), 1);
+    }
+    const entrou = new Set();
+    for (const [k, lista] of Object.entries(por)) {
+      const L = COMP[k], bloq = this.bloqRev(k);
+      lista.sort((a, b) => b.pos - a.pos);
+      let lider = null;
+      for (const c of lista) {
+        if (c.estado === 'manobrando') { lider = c.pos; continue; }
+        const antes = c.pos; let des = c.pos + this.vmax(c, k) * DT;
+        if (lider !== null) des = Math.min(des, lider - GAP);
+        for (const b of bloq) if (b > c.pos) des = Math.min(des, b - GAP / 2);
+        const ultima = c.i === c.rota.length - 1;
+        if ((ultima || c.busca) && c.alvo !== null) des = Math.min(des, c.alvo);
+        des = Math.max(des, c.pos);
+        if (c.busca && c.vaga === null && TIPO[k] === 'corredor') { const a = this.procurar(c, k, antes, des); if (a !== null) { c.alvo = a; des = Math.min(des, a); } }
+        c.pos = Math.min(des, L);
+        c.freando = c.pos - antes < .05; if (c.freando) c.parado += DT;
+        if (c.alvo !== null && (ultima || c.busca) && Math.abs(c.pos - c.alvo) < .05) { c.estado = 'manobrando'; c.tfm = this.t + this.rng.uniform(12, 24); lider = c.pos; continue; }
+        if (c.pos >= L - 1e-6) {
+          if (ultima) { c.estado = 'desistiu'; if (c.vaga) delete this.reservada[c.vaga]; this.reservas.delete(c.id); continue; }
+          const prox = c.rota[c.i + 1];
+          if (!entrou.has(prox) && this.naAresta(prox).filter(o => o !== c).every(o => o.pos >= GAP) && this.bloqRev(prox).every(b => b >= GAP)) { entrou.add(prox); c.i++; c.pos = 0; continue; }
+        }
+        lider = c.pos;
+      }
+    }
+  }
+  passo() {
+    if (this.fim) return;
+    this.cancela(); this.mover();
+    if (this.t > 25 * 60 || this.carros.every(c => ['estacionado', 'rejeitado', 'desistiu'].includes(c.estado))) this.fim = true;
+    this.t += DT;
+  }
+  metricas() {
+    const est = this.carros.filter(c => c.estado === 'estacionado');
+    const media = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
+    const tot = est.map(c => c.test - c.tc), ord = tot.slice().sort((a, b) => a - b);
+    return {
+      estacionados: est.length, total: this.carros.length,
+      interno: media(est.map(c => c.test - c.tsc)), parado: media(est.map(c => c.parado)),
+      p95: ord.length ? ord[Math.floor(.95 * (ord.length - 1))] : 0,
+      portaAPorta: media(est.map(c => c.test - c.tc + caminhada(VG[c.vaga]) / V_CAM)),
+    };
+  }
+}
+
+// ===================================================================== interface
+const ESTRATEGIAS = [['sem_sistema', 'Sem sistema', '--s1'], ['mais_proxima', 'Mais próxima', '--s2'], ['reativa', 'Reativa', '--s3'], ['preditiva', 'Preditiva (IA)', '--s4']];
+const VELOCIDADES = [[1, '1×'], [5, '5×'], [20, '20×'], [60, '60×']];
+const estado = { cenario: 1, estrategia: 'preditiva', vel: 20, rodando: !matchMedia('(prefers-reduced-motion: reduce)').matches, semente: 1 };
+let sim;
+
+const $ = id => document.getElementById(id);
+$('cenario').innerHTML = CENARIOS.map((c, i) => `<option value="${i}">${c.nome}</option>`).join('');
+$('cenario').value = estado.cenario;
+function segmentos(el, itens, chaveEstado, aoMudar) {
+  el.innerHTML = itens.map(([v, r, cor]) => `<button type="button" data-v="${v}" aria-pressed="${String(estado[chaveEstado]) === String(v)}">${cor ? `<i style="background:var(${cor})"></i>` : ''}${r}</button>`).join('');
+  el.onclick = e => { const b = e.target.closest('button'); if (!b) return; estado[chaveEstado] = isNaN(+b.dataset.v) ? b.dataset.v : +b.dataset.v; [...el.children].forEach(x => x.setAttribute('aria-pressed', x === b)); aoMudar && aoMudar(); };
+}
+segmentos($('estrategias'), ESTRATEGIAS, 'estrategia', reiniciar);
+segmentos($('velocidades'), VELOCIDADES, 'vel');
+$('cenario').onchange = e => { estado.cenario = +e.target.value; reiniciar(); };
+$('play').onclick = () => { estado.rodando = !estado.rodando; $('play').textContent = estado.rodando ? 'Pausar' : 'Continuar'; };
+$('reiniciar').onclick = () => { estado.semente++; reiniciar(); };
+$('play').textContent = estado.rodando ? 'Pausar' : 'Continuar';
+
+function reiniciar() {
+  const c = CENARIOS[estado.cenario];
+  sim = new Sim(gerarChegadas(c, new RNG(1000 + estado.semente * 31 + estado.cenario)), estado.estrategia, c.idx, estado.semente);
+  // começa um pouco antes da primeira chegada dos voluntários
+  for (let i = 0; i < 40; i++) sim.passo();
+  atualizarPainel(true);
+}
+
+// ------------------------------------------------------------------ desenho
+// Fundo: a planta em SVG (o mesmo desenho das outras telas). Por cima: um canvas com os carros andando.
+const cv = $('tela'), ctx = cv.getContext('2d');
+const [MX0, MY0, MX1, MY1] = LAY.limites;
+$('mapa-wrap').style.aspectRatio = `${MX1 - MX0} / ${MY1 - MY0}`;
+const planta = SmartPlanta.criar($('planta'), LAY);
+let cores = {};
+function lerCores() { const s = getComputedStyle(document.documentElement); for (const k of ['c-geral', 'c-prio', 'c-equipe', 'c-visit', 'freio', 'faixa']) cores[k] = s.getPropertyValue('--' + k).trim(); }
+lerCores();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', lerCores);
+new MutationObserver(lerCores).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+let dpr = 1;
+function ajustarCanvas() {
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = Math.round(cv.clientWidth * dpr); cv.height = Math.round(cv.clientHeight * dpr);
+}
+addEventListener('resize', ajustarCanvas);
+
+function corCat(cat) { return cat === 'IDOSO' || cat === 'PCD' ? cores['c-prio'] : cat === 'EQUIPE' ? cores['c-equipe'] : cat === 'VISITANTE' ? cores['c-visit'] : cores['c-geral']; }
+
+function carro(x, y, ang, cor, freio, alerta, comp = 4.2) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
+  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.roundRect(-comp / 2 + .15, -.9 + .2, comp, 1.8, .5); ctx.fill();
+  ctx.fillStyle = cor; ctx.beginPath(); ctx.roundRect(-comp / 2, -.9, comp, 1.8, .5); ctx.fill();
+  ctx.fillStyle = 'rgba(20,24,28,.6)'; ctx.fillRect(comp * .08, -.72, comp * .2, 1.44);
+  if (freio) { ctx.fillStyle = cores.freio; ctx.fillRect(-comp / 2 - .1, -.85, .45, .5); ctx.fillRect(-comp / 2 - .1, .35, .45, .5); }
+  if (alerta) { ctx.fillStyle = cores.faixa; for (const sx of [-1, 1]) for (const sy of [-1, 1]) { ctx.beginPath(); ctx.arc(sx * comp / 2, sy * .8, .4, 0, 7); ctx.fill(); } }
+  ctx.restore();
+}
+
+let assinaturaEstado = '', rotaMostrada = null;
+function desenhar() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height);
+  if (!sim) return;
+  // vagas: ocupada / reservada (só redesenha quando muda)
+  const mapa = {};
+  for (const v of VAGAS) mapa[v.id] = sim.ocup[v.id] ? 'ocupada' : (v.id in sim.reservada ? 'reservada' : 'livre');
+  const assin = Object.values(mapa).join('');
+  if (assin !== assinaturaEstado) { assinaturaEstado = assin; planta.estados(mapa); }
+  // rota do último carro orientado, enquanto ele não estaciona
+  const u = sim.ultimo, alvo = u && u.pontos && sim.carros[u.carro] && sim.carros[u.carro].estado === 'movendo' ? u : null;
+  if ((alvo && alvo.carro) !== rotaMostrada) { rotaMostrada = alvo && alvo.carro; planta.rota(alvo ? alvo.pontos : [], alvo ? alvo.vaga : null); }
+  // carros em movimento e fila na cancela
+  const [ox, oy, esc] = planta.paraTela(MX0, MY0);
+  ctx.setTransform(esc * dpr, 0, 0, esc * dpr, (ox - MX0 * esc) * dpr, (oy - MY0 * esc) * dpr);
+  const g = NOS[LAY.entrada], [, prox] = ENTRADA_AR.split('|'), dirY = Math.sign(NOS[prox].y - g.y) || -1;
+  const naFila = [sim.atend, ...sim.fila].filter(Boolean);
+  naFila.slice(0, 12).forEach((c, i) => carro(g.x + 1.15, g.y - dirY * (2 + i * 5.5), Math.atan2(dirY, 0), corCat(c.cat || c.ch.cat), i > 0, false));
+  for (const c of sim.carros) {
+    if (c.estado !== 'movendo' && c.estado !== 'manobrando') continue;
+    const [ia, ib] = c.rota[c.i].split('|'), a = NOS[ia], b = NOS[ib], L = COMP[c.rota[c.i]], f = c.pos / L;
+    const dx = (b.x - a.x) / L, dy = (b.y - a.y) / L;
+    const x = a.x + (b.x - a.x) * f - dy * 1.6, y = a.y + (b.y - a.y) * f + dx * 1.6;
+    const pisca = c.estado === 'manobrando' && Math.floor(performance.now() / 350) % 2 === 0;
+    carro(x, y, Math.atan2(dy, dx), corCat(c.ch.cat), c.freando && c.estado === 'movendo', pisca);
+  }
+}
+
+// ------------------------------------------------------------------ painel
+const ROT = { FRENTE: 0, DIREITA: 90, ESQUERDA: -90, PARE: 180 };
+const fmtS = s => s >= 60 ? `${Math.floor(s / 60)}min ${String(Math.round(s % 60)).padStart(2, '0')}s` : `${Math.round(s)} s`;
+function atualizarPainel(forcar) {
+  const u = sim.ultimo;
+  if (u) {
+    $('g-placa').textContent = u.placa; $('g-cat').textContent = u.cat; $('g-vaga').textContent = u.vaga;
+    $('g-seta').style.transform = `rotate(${ROT[u.seta]}deg)`;
+    $('g-instr').innerHTML = u.instr.map(i => `<li>${i}</li>`).join(''); $('g-msg').textContent = u.msg;
+  } else if (forcar) {
+    $('g-placa').textContent = '-------'; $('g-cat').textContent = '--'; $('g-vaga').textContent = '--'; $('g-instr').innerHTML = ''; $('g-msg').textContent = 'Aguardando o primeiro carro.';
+  }
+  const t = sim.t, sinal = t < 0 ? '−' : '+', a = Math.abs(t);
+  $('m-relogio').textContent = `${sinal}${Math.floor(a / 60)}:${String(Math.floor(a % 60)).padStart(2, '0')}`;
+  const m = sim.metricas();
+  $('m-est').textContent = m.estacionados; $('m-tot').textContent = `de ${m.total} carros do culto`;
+  $('m-tempo').textContent = m.estacionados ? fmtS(m.interno) : '--';
+  $('m-parado').textContent = m.estacionados ? fmtS(m.parado) : '--';
+  $('m-fila').textContent = sim.fila.length + (sim.atend ? 1 : 0);
+  $('m-prev').textContent = sim.est === 'preditiva' && sim.prev !== null ? sim.prev.toFixed(1) + ' carros' : '--';
+  $('m-prev-s').textContent = sim.est === 'preditiva' ? 'chegadas esperadas' : 'só na estratégia preditiva';
+  $('zonas').innerHTML = ZONAS.map(z => {
+    const vs = VAGAS.filter(v => v.zona === z), oc = vs.filter(v => sim.ocup[v.id]).length;
+    return `<div class="zona"><span>${z}</span><div class="trilho"><div style="width:${100 * oc / vs.length}%"></div></div><span>${oc}/${vs.length}</span></div>`;
+  }).join('');
+}
+
+let ultimoQuadro = performance.now(), acumulado = 0, contPainel = 0;
+function laco(agora) {
+  const dt = Math.min(.1, (agora - ultimoQuadro) / 1000); ultimoQuadro = agora;
+  if (estado.rodando && !sim.fim) {
+    acumulado += dt * estado.vel;
+    while (acumulado >= DT) { sim.passo(); acumulado -= DT; }
+  }
+  desenhar();
+  if (++contPainel % 6 === 0) atualizarPainel(false);
+  requestAnimationFrame(laco);
+}
+
+// ------------------------------------------------------------------ gráfico do experimento (Python)
+function graficoPython() {
+  const cens = Object.keys(D.resultados), chaves = ESTRATEGIAS.map(e => e[0]);
+  const W = 1000, H = 330, m = { l: 48, r: 12, t: 16, b: 58 };
+  const max = Math.ceil(Math.max(...cens.flatMap(c => chaves.map(k => D.resultados[c][k].porta_a_porta_medio_s))) / 50) * 50;
+  const y = v => m.t + (H - m.t - m.b) * (1 - v / max);
+  const gw = (W - m.l - m.r) / cens.length, bw = Math.min(30, (gw - 24) / 4);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Tempo médio porta a porta por cenário e estratégia">`;
+  for (let v = 0; v <= max; v += 50) s += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--linha)"/><text x="${m.l - 8}" y="${y(v) + 4}" text-anchor="end" font-size="12" fill="var(--sub)" font-family="var(--mono)">${v}s</text>`;
+  cens.forEach((c, i) => {
+    const x0 = m.l + i * gw + (gw - 4 * bw - 6) / 2;
+    chaves.forEach((k, j) => {
+      const v = D.resultados[c][k].porta_a_porta_medio_s, x = x0 + j * (bw + 2);
+      s += `<g><title>${c} · ${ESTRATEGIAS[j][1]}: ${v.toFixed(0)} s</title><path d="M${x},${y(0)} V${y(v) + 4} q0,-4 4,-4 h${bw - 8} q4,0 4,4 V${y(0)} Z" fill="var(${ESTRATEGIAS[j][2]})"/>`;
+      s += `<text x="${x + bw / 2}" y="${y(v) - 5}" text-anchor="middle" font-size="11" fill="var(--sub)" font-family="var(--mono)">${v.toFixed(0)}</text></g>`;
+    });
+    const red = 100 * (1 - D.resultados[c].preditiva.porta_a_porta_medio_s / D.resultados[c].sem_sistema.porta_a_porta_medio_s);
+    s += `<text x="${m.l + i * gw + gw / 2}" y="${H - m.b + 20}" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">${c.replace(' (estresse)', '')}</text>`;
+    s += `<text x="${m.l + i * gw + gw / 2}" y="${H - m.b + 38}" text-anchor="middle" font-size="12" fill="var(--sub)">−${red.toFixed(0)}% com IA</text>`;
+  });
+  s += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(0)}" y2="${y(0)}" stroke="var(--sub)"/></svg>`;
+  s += `<div class="legenda">${ESTRATEGIAS.map(e => `<span><i style="background:var(${e[2]})"></i>${e[1]}</span>`).join('')}</div>`;
+  $('grafico-python').innerHTML = s;
+}
+
+// ------------------------------------------------------------------ comparação no navegador
+$('rodar').onclick = () => {
+  const c = CENARIOS[estado.cenario], REPS = 4;
+  const res = Object.fromEntries(ESTRATEGIAS.map(e => [e[0], []]));
+  let rep = 0; $('rodar').disabled = true;
+  const lote = () => {
+    const chegadas = gerarChegadas(c, new RNG(50000 + rep * 97 + estado.cenario));
+    for (const [k] of ESTRATEGIAS) { const s = new Sim(chegadas, k, c.idx, rep); while (!s.fim) s.passo(); res[k].push(s.metricas()); }
+    rep++; $('progresso').textContent = `culto ${rep} de ${REPS}…`;
+    if (rep < REPS) setTimeout(lote, 0); else { $('rodar').disabled = false; $('progresso').textContent = `${c.nome}: ${REPS} cultos sorteados`; tabela(res); }
+  };
+  lote();
+};
+function tabela(res) {
+  const media = (k, f) => res[k].reduce((a, m) => a + m[f], 0) / res[k].length;
+  const cols = [['portaAPorta', 'Porta a porta'], ['p95', 'Pior 5% até a vaga'], ['interno', 'Cancela → vaga'], ['parado', 'Parado em fila']];
+  const melhores = Object.fromEntries(cols.map(([f]) => [f, Math.min(...ESTRATEGIAS.map(e => media(e[0], f)))]));
+  const base = media('sem_sistema', 'portaAPorta');
+  $('tabela').innerHTML = `<table><thead><tr><th>Estratégia</th>${cols.map(c => `<th>${c[1]}</th>`).join('')}<th>Ganho</th></tr></thead><tbody>${ESTRATEGIAS.map(([k, r, cor]) =>
+    `<tr><td><span class="legenda" style="padding:0"><span><i style="background:var(${cor})"></i>${r}</span></span></td>${cols.map(([f]) => { const v = media(k, f); return `<td class="${Math.abs(v - melhores[f]) < .05 ? 'melhor' : ''}">${v.toFixed(1)} s</td>`; }).join('')}<td>${k === 'sem_sistema' ? '—' : '−' + (100 * (1 - media(k, 'portaAPorta') / base)).toFixed(0) + '%'}</td></tr>`).join('')}</tbody></table>`;
+}
+
+graficoPython();
+ajustarCanvas();
+reiniciar();
+requestAnimationFrame(laco);
+</script>
