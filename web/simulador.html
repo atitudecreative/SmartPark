@@ -1,0 +1,928 @@
+<title>Smart Park — Simulador</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&family=Overpass+Mono:wght@400;600&display=swap">
+<style>
+/* Ponto médio (·) no Overpass engole o espaço seguinte: esse caractere vem de outra fonte. */
+@font-face { font-family: "SP Ponto"; src: local("Helvetica Neue"), local("Arial"), local("Liberation Sans"); unicode-range: U+00B7; }
+/* Usei as mesmas cores e fontes do resto do sistema (raspberry/scripts/estilo.css).
+   Layout: a planta do estacionamento no centro; guarita e métricas ao lado; comparação embaixo.
+   Linguagem visual de sinalização viária: tipografia Overpass (derivada da Highway Gothic), amarelo de faixa, asfalto. */
+:root {
+  --bg: #f5f6f8;
+  --card: #ffffff;
+  --ink: #12161b;
+  --sub: #4b5461;
+  --linha: #e2e5ea;
+  --asfalto: #3d434a;
+  --faixa: #f2b705;
+  --tinta: #f4f5f6;
+  --grama: #d9e3d6;
+  --predio: #c9ced3;
+  --pref: #2a78d6;
+  --c-geral: #e9ebee;
+  --c-prio: #3987e5;
+  --c-equipe: #8f84e8;
+  --c-visit: #1baf7a;
+  --freio: #e34948;
+  --s1: #2f6fd0; --s2: #d0581f; --s3: #148a62; --s4: #b07d00;
+  --display: "SP Ponto", "Overpass", "Helvetica Neue", Arial, sans-serif;
+  --mono: "SP Ponto", "Overpass Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0d10; --card: #111418; --ink: #eceff2; --sub: #a7afb9; --linha: #242a31;
+    --asfalto: #2c3137; --tinta: #d9dcdf; --grama: #18201a; --predio: #262c32;
+    --s1: #4c8fe8; --s2: #e0703a; --s3: #22a878; --s4: #d39a12;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b0d10; --card: #111418; --ink: #eceff2; --sub: #a7afb9; --linha: #242a31;
+  --asfalto: #2c3137; --tinta: #d9dcdf; --grama: #18201a; --predio: #262c32;
+  --s1: #4c8fe8; --s2: #e0703a; --s3: #22a878; --s4: #d39a12;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--display); margin: 0; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-inline: clamp(16px, 3vw, 32px); padding-block: 24px 48px; display: grid; gap: 20px; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 20px; }
+.placa-marca { display: inline-grid; place-items: center; width: 44px; height: 44px; background: var(--faixa); color: #16191d; font-weight: 800; font-size: 24px; transform: rotate(45deg); border-radius: 6px; }
+.placa-marca span { transform: rotate(-45deg); }
+h1 { font-size: clamp(22px, 3vw, 30px); font-weight: 800; letter-spacing: .04em; margin: 0; text-transform: uppercase; line-height: 1.1; }
+.sub { color: var(--sub); margin: 2px 0 0; }
+.barra { display: flex; flex-wrap: wrap; gap: 12px 22px; align-items: end; background: var(--card); border: 1px solid var(--linha); border-radius: 12px; padding: 14px 16px; }
+.campo { display: grid; gap: 6px; min-width: 0; }
+.rot { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--sub); }
+select, button { font: inherit; color: var(--ink); }
+select { background: var(--bg); border: 1px solid var(--linha); border-radius: 8px; padding: 7px 10px; max-width: 100%; }
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--linha); border-radius: 8px; overflow: hidden; }
+.seg button { background: transparent; border: 0; border-right: 1px solid var(--linha); padding: 7px 12px; cursor: pointer; font-weight: 600; font-size: 14px; display: inline-flex; gap: 7px; align-items: center; }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.seg i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.acoes { display: flex; gap: 8px; margin-left: auto; }
+.btn { background: var(--faixa); color: #16191d; border: 0; border-radius: 8px; padding: 8px 16px; font-weight: 800; cursor: pointer; letter-spacing: .02em; }
+.btn.sec { background: transparent; color: var(--ink); border: 1px solid var(--linha); font-weight: 600; }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--faixa); outline-offset: 2px; }
+.palco { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; }
+.mapa { background: var(--card); border: 1px solid var(--linha); border-radius: 12px; padding: 10px; min-width: 0; }
+.mapa-wrap { position: relative; width: 100%; aspect-ratio: 200 / 112; border-radius: 8px; overflow: hidden; background: #0c0f12; }
+#planta, #tela { position: absolute; inset: 0; width: 100%; height: 100%; }
+#tela { pointer-events: none; }
+.legenda { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 10px 6px 2px; color: var(--sub); font-size: 13px; }
+.legenda span { display: inline-flex; align-items: center; gap: 6px; }
+.legenda i { width: 14px; height: 8px; border-radius: 2px; display: inline-block; }
+aside { display: grid; gap: 14px; min-width: 0; }
+.guarita { background: var(--asfalto); color: #f4f5f6; border-radius: 12px; padding: 16px; display: grid; gap: 10px; }
+.guarita .rot { color: #b9c0c7; }
+.mercosul { width: 100%; max-width: 230px; border: 2px solid #1b1f24; border-radius: 6px; overflow: hidden; background: #fff; color: #111; text-align: center; }
+.mercosul .faixa-azul { background: #003399; color: #fff; font: 600 9px/1 var(--display); letter-spacing: .2em; padding: 3px 0; }
+.mercosul .num { font: 700 26px/1.2 var(--mono); letter-spacing: .12em; padding: 2px 0 1px; }
+.linha-vaga { display: flex; align-items: center; gap: 14px; }
+.vaga-big { font: 800 56px/1 var(--display); letter-spacing: .02em; }
+.seta { width: 46px; height: 46px; color: var(--faixa); transition: transform .35s; }
+.chip { display: inline-block; font-size: 12px; font-weight: 800; letter-spacing: .08em; padding: 3px 9px; border-radius: 99px; background: #4a5159; }
+.instr { margin: 0; padding-left: 18px; color: #d0d5da; font-size: 13px; }
+.msg { font-size: 14px; color: #f4f5f6; }
+.metricas { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px 16px; padding: 14px 6px 4px; border-top: 1px solid var(--linha); margin-top: 8px; }
+.ocupacao { background: var(--card); border: 1px solid var(--linha); border-radius: 12px; padding: 14px 16px; display: grid; gap: 10px; }
+.met b { display: block; font: 600 22px/1.15 var(--mono); font-variant-numeric: tabular-nums; }
+.met small { color: var(--sub); font-size: 12px; }
+.zonas { display: grid; gap: 8px; }
+.zona { display: grid; grid-template-columns: 18px 1fr 44px; align-items: center; gap: 8px; font: 600 13px var(--mono); }
+.trilho { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+.trilho div { height: 100%; background: var(--sub); border-radius: 4px; transition: width .3s; }
+section.comparar { background: var(--card); border: 1px solid var(--linha); border-radius: 12px; padding: 20px; display: grid; gap: 14px; }
+h2 { font-size: 20px; font-weight: 800; margin: 0; text-wrap: balance; }
+.texto { color: var(--sub); max-width: 72ch; margin: 0; }
+.grafico { overflow-x: auto; }
+.grafico svg { display: block; min-width: 640px; width: 100%; height: auto; }
+.tabela-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 520px; }
+th, td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--linha); font-variant-numeric: tabular-nums; }
+th:first-child, td:first-child { text-align: left; }
+th { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--sub); font-weight: 600; }
+td.melhor { font-weight: 800; }
+.progresso { color: var(--sub); font: 13px var(--mono); }
+footer { color: var(--sub); font-size: 13px; max-width: 90ch; }
+@media (max-width: 900px) { .palco { grid-template-columns: 1fr; } .acoes { margin-left: 0; } }
+@media (prefers-reduced-motion: reduce) { .seta, .trilho div { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="placa-marca" aria-hidden="true"><span>P</span></div>
+    <div>
+      <h1>Smart Park</h1>
+      <p class="sub">Simulador da planta do estacionamento da Igreja Batista Atitude (250 vagas) · TCC de Engenharia</p>
+    </div>
+  </header>
+
+  <div class="barra" role="group" aria-label="Controles da simulação">
+    <label class="campo" for="cenario"><span class="rot">Culto</span>
+      <select id="cenario"></select>
+    </label>
+    <div class="campo"><span class="rot">Estratégia da guarita</span>
+      <div class="seg" id="estrategias"></div>
+    </div>
+    <div class="campo"><span class="rot">Velocidade</span>
+      <div class="seg" id="velocidades"></div>
+    </div>
+    <div class="acoes">
+      <button class="btn" id="play">Pausar</button>
+      <button class="btn sec" id="reiniciar">Novo sorteio</button>
+    </div>
+  </div>
+
+  <div class="palco">
+    <div class="mapa">
+      <div class="mapa-wrap" id="mapa-wrap"><div id="planta"></div><canvas id="tela" aria-hidden="true"></canvas></div>
+      <div class="legenda">
+        <span>Carros andando, por categoria:</span>
+        <span><i style="background:var(--c-geral)"></i>membro</span>
+        <span><i style="background:var(--c-prio)"></i>idoso / PcD</span>
+        <span><i style="background:var(--c-equipe)"></i>equipe</span>
+        <span><i style="background:var(--c-visit)"></i>visitante</span>
+        <span><i style="background:var(--freio)"></i>luz de freio: parado na fila</span>
+        <span><i style="background:rgba(242,183,5,.7)"></i>vaga reservada · tracejado amarelo: rota do último carro</span>
+      </div>
+      <div class="metricas">
+        <div class="met"><span class="rot">Horário</span><b id="m-relogio">--</b><small>em relação ao culto</small></div>
+        <div class="met"><span class="rot">Estacionados</span><b id="m-est">0</b><small id="m-tot">de 0 previstos</small></div>
+        <div class="met"><span class="rot">Até a vaga</span><b id="m-tempo">--</b><small>média, depois da cancela</small></div>
+        <div class="met"><span class="rot">Parado em fila</span><b id="m-parado">--</b><small>média por carro</small></div>
+        <div class="met"><span class="rot">Fila na cancela</span><b id="m-fila">0</b><small>carros agora</small></div>
+        <div class="met"><span class="rot">Previsão 5 min</span><b id="m-prev">--</b><small id="m-prev-s">só na estratégia preditiva</small></div>
+      </div>
+    </div>
+    <aside>
+      <div class="guarita" aria-live="polite">
+        <span class="rot">Guarita · último veículo</span>
+        <div class="mercosul"><div class="faixa-azul">BRASIL</div><div class="num" id="g-placa">-------</div></div>
+        <div><span class="chip" id="g-cat">--</span></div>
+        <span class="rot">Sua vaga</span>
+        <div class="linha-vaga"><div class="vaga-big" id="g-vaga">--</div>
+          <svg class="seta" id="g-seta" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 6 L90 50 H64 V94 H36 V50 H10 Z" fill="currentColor"/></svg></div>
+        <ol class="instr" id="g-instr"></ol>
+        <div class="msg" id="g-msg">Aguardando o primeiro carro.</div>
+      </div>
+      <div class="ocupacao"><span class="rot">Ocupação por corredor</span><div class="zonas" id="zonas"></div></div>
+    </aside>
+  </div>
+
+  <section class="comparar" id="comparar">
+    <h2>Quanto o sistema economiza</h2>
+    <p class="texto">Tempo médio entre a chegada à cancela e a chegada a pé na porta da igreja (dirigir, ficar parado, manobrar e caminhar). Experimento em Python no estacionamento de referência (48 vagas), com 20 cultos sorteados por cenário e as mesmas chegadas para as quatro estratégias.</p>
+    <div class="grafico" id="grafico-python"></div>
+    <h2>Rode você mesmo</h2>
+    <p class="texto">Sorteia 4 cultos do cenário escolhido acima e roda as quatro estratégias aqui no navegador, na planta de 250 vagas (leva alguns segundos). No navegador a previsão usa o perfil histórico ajustado pelas chegadas recentes; no Raspberry Pi ela vem do modelo Random Forest.</p>
+    <div><button class="btn" id="rodar">Comparar estratégias neste culto</button> <span class="progresso" id="progresso"></span></div>
+    <div class="tabela-wrap" id="tabela"></div>
+  </section>
+
+  <footer>Modelo de tráfego: uma faixa por sentido, distância mínima de 7 m entre carros, velocidade de 14 km/h nas vias e 9 km/h nos corredores, manobra de 12 a 24 s que bloqueia o corredor. Cancela: 3,5 s por carro (a câmera lê a placa enquanto o carro se aproxima). Volume de carros proporcional às 250 vagas. Placas sorteadas e fictícias; 7% das leituras falham e o carro é tratado como visitante. Os volumes e horários de chegada são hipóteses iniciais, a serem substituídas pela contagem real na guarita.</footer>
+</div>
+
+<script>
+/*
+ * SmartPlanta — desenho a planta do estacionamento em SVG, no estilo de planta baixa
+ * (asfalto, canteiros, prédios, vagas numeradas, vagas de idoso e PcD).
+ * Uso o mesmo desenho em todas as telas: painel da equipe, tablet do motorista, admin e simulador.
+ *
+ *   const p = SmartPlanta.criar(elemento, layout, { aoClicar: id => ..., livresVerdes: true })
+ *   p.estados({ "07": "ocupada", "12": "reservada" })          // livre | ocupada | reservada
+ *   p.rota([[x,y], ...], "137")                                 // caminho até a vaga + destaque
+ *   p.calor({ "07": 83.2, ... }, "% do tempo ocupada")          // mapa de uso (admin)
+ *   p.saude({ "07": "atencao", ... })                           // ok | atencao | falha (admin)
+ *   p.limpar()                                                  // volta ao desenho base
+ *   p.paraTela(x, y)                                            // metros -> pixels (para camadas por cima)
+ * Trabalho em metros, com o eixo y para baixo (igual ao layout.py).
+ */
+(function () {
+  const NS = 'http://www.w3.org/2000/svg';
+  const COR = {
+    grama: '#56783a', gramaEscura: '#4a6a31', asfalto: '#3b3f44', faixa: '#f1f2ef',
+    calcada: '#c9c1af', telhado: '#e6e7e8', telhadoBorda: '#9aa1a8', sombra: 'rgba(0,0,0,.28)',
+    idoso: '#e7b416', pcd: '#1f61c3', livre: '#1baf7a', reservada: '#f2b705', rota: '#f2b705',
+  };
+  const CARROS = ['#e9ebee', '#b8bec6', '#2b2f35', '#8d1f22', '#2a4f86', '#5f6670', '#d8d2c4'];
+
+  function el(tag, attrs, pai) {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (pai) pai.appendChild(e);
+    return e;
+  }
+  function hash(s) { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return Math.abs(h); }
+
+  // ---------------------------------------------------------------- pictogramas
+  function iconeIdoso(g, x, y, s, cor) {
+    const i = el('g', { transform: `translate(${x} ${y}) scale(${s})`, fill: 'none', stroke: cor, 'stroke-width': .16, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, g);
+    el('circle', { cx: -.05, cy: -.78, r: .17, fill: cor, stroke: 'none' }, i);
+    el('path', { d: 'M-.1 -.55 L-.22 .05 L-.05 .1 M-.22 .05 L-.35 .7 M-.17 -.2 L.08 0 M-.05 .1 L.05 .7 M.18 -.05 L.3 .7' }, i);
+    return i;
+  }
+  function iconePcd(g, x, y, s, cor) {
+    const i = el('g', { transform: `translate(${x} ${y}) scale(${s})`, fill: 'none', stroke: cor, 'stroke-width': .15, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, g);
+    el('circle', { cx: -.12, cy: -.8, r: .16, fill: cor, stroke: 'none' }, i);
+    el('path', { d: 'M-.15 -.55 L-.1 .02 L.32 .02 L.48 .55 M-.12 -.3 L.25 -.3' }, i);
+    el('path', { d: 'M-.38 -.12 A.5 .5 0 1 0 .2 .42' }, i);
+    return i;
+  }
+
+  function arvore(g, x, y, r) {
+    el('circle', { cx: x + r * .15, cy: y + r * .2, r: r, fill: 'rgba(0,0,0,.22)' }, g);
+    el('circle', { cx: x, cy: y, r: r, fill: '#3e6a2b' }, g);
+    el('circle', { cx: x - r * .25, cy: y - r * .25, r: r * .62, fill: '#5d8f3e' }, g);
+    el('circle', { cx: x - r * .4, cy: y - r * .4, r: r * .22, fill: '#7fae58' }, g);
+  }
+
+  // ---------------------------------------------------------------- geometria
+  function eixoDaVaga(L, v) {
+    const no = L._no, a = no[v.aresta[0]], b = no[v.aresta[1]];
+    const c = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    return { ux: (b.x - a.x) / c, uy: (b.y - a.y) / c, ang: Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI };
+  }
+
+  let instancias = 0;
+  function criar(alvo, L, opts = {}) {
+    const uid = 'sp' + (++instancias);   // ids únicos: várias plantas na mesma página
+    L._no = Object.fromEntries(L.nos.map(n => [n.id, n]));
+    const [x0, y0, x1, y1] = L.limites || [-10, -10, 110, 50];
+    const W = x1 - x0, H = y1 - y0;
+    alvo.innerHTML = '';
+    const svg = el('svg', { viewBox: `${x0} ${y0} ${W} ${H}`, preserveAspectRatio: 'xMidYMid meet', role: 'img',
+      'aria-label': 'Planta do estacionamento', class: 'planta-svg' }, alvo);
+    svg.style.display = 'block'; svg.style.width = '100%'; svg.style.height = '100%';
+
+    const defs = el('defs', {}, svg);
+    const hach = el('pattern', { id: uid + '-hachura', width: .7, height: .7, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' }, defs);
+    el('rect', { width: .7, height: .7, fill: '#e7b416' }, hach);
+    el('rect', { width: .35, height: .7, fill: '#2b2e33' }, hach);
+    const grama = el('pattern', { id: uid + '-grama', width: 3, height: 3, patternUnits: 'userSpaceOnUse' }, defs);
+    el('rect', { width: 3, height: 3, fill: COR.grama }, grama);
+    el('circle', { cx: .7, cy: .9, r: .25, fill: COR.gramaEscura }, grama);
+    el('circle', { cx: 2.2, cy: 2.1, r: .2, fill: '#62853f' }, grama);
+    const est = el('style', {}, svg);
+    est.textContent = `
+      .sp-res { animation: sp-pulso 1.1s ease-in-out infinite; }
+      .sp-dest { animation: sp-pulso .8s ease-in-out infinite; }
+      .sp-rota { animation: sp-anda 1s linear infinite; }
+      @keyframes sp-pulso { 50% { opacity: .35; } }
+      @keyframes sp-anda { to { stroke-dashoffset: -4.4; } }
+      @media (prefers-reduced-motion: reduce) { .sp-res, .sp-dest, .sp-rota { animation: none; } }
+      .sp-vaga { cursor: ${opts.aoClicar ? 'pointer' : 'default'}; }
+      .sp-txt { font-family: "Overpass", "Barlow", system-ui, sans-serif; }`;
+
+    const camada = n => el('g', { class: 'sp-' + n }, svg);
+    const gBase = camada('base'), gVias = camada('vias'), gVagas = camada('vagas'), gPred = camada('predios'),
+      gDeco = camada('deco'), gArv = camada('arvores'), gEstado = camada('estado'), gRota = camada('rota'), gTopo = camada('topo');
+    // a rota e o marcador de destino ficam por cima das vagas, mas não podem roubar o clique delas
+    gRota.setAttribute('pointer-events', 'none'); gTopo.setAttribute('pointer-events', 'none');
+
+    // ---------- terreno, canteiros e calçadas
+    const deco = L.decoracao || [];
+    if (!deco.some(d => d.tipo === 'canteiro' && d.w >= W * .9)) el('rect', { x: x0, y: y0, width: W, height: H, fill: `url(#${uid}-grama)` }, gBase);
+    for (const d of deco) {
+      if (d.tipo === 'canteiro') el('rect', { x: d.x, y: d.y, width: d.w, height: d.h, rx: d.w < 3 || d.h < 3 ? .8 : 1.2, fill: `url(#${uid}-grama)`, stroke: d.w < W * .9 ? '#e8e8e2' : 'none', 'stroke-width': .25 }, gBase);
+      if (d.tipo === 'calcada') el('rect', { x: d.x, y: d.y, width: d.w, height: d.h, fill: COR.calcada }, gBase);
+    }
+
+    // ---------- vias (asfalto) e áreas de vaga
+    for (const e of L.arestas) {
+      const a = L._no[e.a], b = L._no[e.b];
+      el('line', { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: COR.asfalto, 'stroke-width': e.tipo === 'corredor' && !['A', 'B'].includes(e.zona) ? 6 : 7, 'stroke-linecap': 'square' }, gVias);
+    }
+    // bordas brancas das vias externas (meio-fio)
+    // ---------- vagas
+    const vagaEl = {};
+    for (const v of L.vagas) {
+      const { ux, uy, ang } = eixoDaVaga(L, v);
+      const w = v.largura || 2.5, d = 5;
+      const g = el('g', { class: 'sp-vaga', 'data-id': v.id }, gVagas);
+      const r = el('g', { transform: `translate(${v.x} ${v.y}) rotate(${ang})` }, g);
+      const fundo = v.tipo === 'pcd' ? COR.pcd : COR.asfalto;
+      el('rect', { x: -w / 2, y: -d / 2, width: w, height: d, fill: fundo }, r);
+      if (v.tipo === 'pcd') el('rect', { x: w / 2 - .7, y: -d / 2, width: .7, height: d, fill: `url(#${uid}-hachura)` }, r);
+      el('rect', { x: -w / 2, y: -d / 2, width: w, height: d, fill: 'none', stroke: v.tipo === 'idoso' ? COR.idoso : COR.faixa, 'stroke-width': v.tipo === 'idoso' ? .22 : .13 }, r);
+      const sobre = el('rect', { x: -w / 2 + .1, y: -d / 2 + .1, width: w - .2, height: d - .2, fill: 'transparent' }, r);
+      // ícone e número (sempre em pé)
+      const horizontal = Math.abs(uy) > Math.abs(ux);   // via vertical -> vaga deitada
+      const tam = (v.id.length > 2 ? 1.05 : 1.2);
+      if (v.tipo !== 'comum') {
+        const ix = horizontal ? v.x - 1.15 : v.x, iy = horizontal ? v.y + .05 : v.y - .9;
+        (v.tipo === 'pcd' ? iconePcd : iconeIdoso)(g, ix, iy, 1.05, v.tipo === 'pcd' ? '#fff' : COR.idoso);
+        const t = el('text', { x: horizontal ? v.x + 1.05 : v.x, y: horizontal ? v.y + .42 : v.y + 1.75, 'text-anchor': 'middle', 'font-size': tam * .9, fill: '#fff', 'font-weight': 700, class: 'sp-txt' }, g);
+        t.textContent = v.id;
+      } else {
+        const t = el('text', { x: v.x, y: v.y + tam * .36, 'text-anchor': 'middle', 'font-size': tam, fill: '#f1f2ef', 'font-weight': 600, class: 'sp-txt' }, g);
+        t.textContent = v.id;
+      }
+      const tit = el('title', {}, g); tit.textContent = `Vaga ${v.id}` + (v.tipo !== 'comum' ? ` (${v.tipo === 'pcd' ? 'PcD' : 'idoso'})` : '') + ` · setor ${v.zona}`;
+      vagaEl[v.id] = { g, r, sobre, w, d, ang, v, titulo: tit };
+      if (opts.aoClicar) g.addEventListener('click', () => opts.aoClicar(v.id));
+    }
+
+    // ---------- prédios
+    for (const d of deco) {
+      if (d.tipo !== 'predio') continue;
+      el('rect', { x: d.x + .7, y: d.y + .9, width: d.w, height: d.h, fill: COR.sombra }, gPred);
+      el('rect', { x: d.x, y: d.y, width: d.w, height: d.h, fill: COR.telhado, stroke: COR.telhadoBorda, 'stroke-width': .35 }, gPred);
+      el('rect', { x: d.x + 1.1, y: d.y + 1.1, width: d.w - 2.2, height: d.h - 2.2, fill: 'none', stroke: '#cfd2d5', 'stroke-width': .25 }, gPred);
+      const t = el('text', { x: d.x + d.w / 2, y: d.y + d.h / 2 + 1, 'text-anchor': 'middle', 'font-size': d.w < 14 ? 1.7 : 2.8, 'font-weight': 800, fill: '#22262b', class: 'sp-txt', 'letter-spacing': .05 }, gPred);
+      t.textContent = d.rotulo || '';
+      if (d.w < 14) t.setAttribute('transform', `rotate(-90 ${d.x + d.w / 2} ${d.y + d.h / 2})`);
+      if (d.porta) {
+        el('rect', { x: d.porta[0] - 2.5, y: d.porta[1] - .9, width: 5, height: 1.3, fill: '#8b9097' }, gPred);
+        el('rect', { x: d.porta[0] - 2.2, y: d.porta[1] - .7, width: 4.4, height: .9, fill: '#c4c8cc' }, gPred);
+      }
+    }
+
+    // ---------- guarita, cancela, faixas, setas, rótulos
+    for (const d of deco) {
+      if (d.tipo === 'guarita') {
+        el('rect', { x: d.x + .4, y: d.y + .5, width: d.w, height: d.h, fill: COR.sombra }, gDeco);
+        el('rect', { x: d.x, y: d.y, width: d.w, height: d.h, fill: '#d8dbde', stroke: '#7d848c', 'stroke-width': .2 }, gDeco);
+        el('rect', { x: d.x + .5, y: d.y + .6, width: d.w - 1, height: 1.1, fill: '#56606b' }, gDeco);
+      } else if (d.tipo === 'cancela') {
+        const n = 8, dx = (d.x2 - d.x1) / n;
+        for (let i = 0; i < n; i++) el('line', { x1: d.x1 + i * dx, y1: d.y1, x2: d.x1 + (i + 1) * dx, y2: d.y2, stroke: i % 2 ? '#f1f2ef' : '#d9302f', 'stroke-width': .55 }, gDeco);
+        el('circle', { cx: d.x1, cy: d.y1, r: .5, fill: '#2b2e33' }, gDeco);
+      } else if (d.tipo === 'faixa') {
+        for (let x = d.x + .3; x < d.x + d.w; x += 1.1) el('rect', { x, y: d.y, width: .55, height: d.h, fill: '#f1f2ef' }, gDeco);
+      } else if (d.tipo === 'seta') {
+        el('path', { d: 'M-2.2 -.22 H.9 V-.75 L2.2 0 L.9 .75 V.22 H-2.2 Z', fill: '#f1f2ef', transform: `translate(${d.x} ${d.y}) rotate(${d.ang})` }, gDeco);
+      } else if (d.tipo === 'rotulo') {
+        const t = el('text', { x: d.x, y: d.y, 'text-anchor': 'middle', 'font-size': d.pequeno ? 1.3 : 2.4, 'font-weight': 800,
+          fill: '#f1f2ef', class: 'sp-txt', 'letter-spacing': d.pequeno ? .15 : .1 }, gDeco);
+        t.textContent = d.texto;
+      }
+    }
+    // letras dos setores no topo de cada corredor
+    const zonasCor = {};
+    for (const e of L.arestas) {
+      if (e.tipo !== 'corredor' || ['A', 'B'].includes(e.zona)) continue;
+      const a = L._no[e.a], b = L._no[e.b], top = a.y < b.y ? a : b;
+      const vs = L.vagas.filter(v => v.zona === e.zona);
+      const yMin = Math.min(...vs.map(v => v.y)) - 4.5;
+      el('circle', { cx: top.x, cy: yMin, r: 2, fill: '#f1f2ef' }, gDeco);
+      const t = el('text', { x: top.x, y: yMin + .85, 'text-anchor': 'middle', 'font-size': 2.4, 'font-weight': 800, fill: '#22262b', class: 'sp-txt' }, gDeco);
+      t.textContent = e.zona;
+      zonasCor[e.zona] = [top.x, yMin];
+    }
+    // porta da igreja
+    const [px, py] = L.porta;
+    el('circle', { cx: px, cy: py, r: .8, fill: '#f2b705', stroke: '#22262b', 'stroke-width': .25 }, gDeco);
+
+    // ---------- árvores (posições fixas, sem sorteio)
+    for (const d of deco) {
+      if (d.tipo !== 'canteiro' || !d.arvores) continue;
+      const n = d.arvores, vertical = d.h > d.w;
+      if (vertical || d.h < 6) {
+        for (let i = 0; i < n; i++) {
+          const f = (i + .5) / n;
+          arvore(gArv, vertical ? d.x + d.w / 2 : d.x + d.w * f, vertical ? d.y + d.h * f : d.y + d.h / 2, Math.min(2.2, Math.max(.9, Math.min(d.w, d.h) * .5)));
+        }
+      } else {
+        const linhas = d.h > 18 ? 2 : 1;
+        for (let l = 0; l < linhas; l++) for (let i = 0; i < n; i++) {
+          const f = (i + .5 + (l % 2) * .5) / n;
+          if (f >= 1) continue;
+          arvore(gArv, d.x + d.w * f, d.y + d.h * (l + 1) / (linhas + 1), 2.3 - (hash(d.x + i + l) % 5) * .15);
+        }
+      }
+    }
+
+    // ---------------------------------------------------------------- API
+    const api = {
+      svg, L,
+      paraTela(x, y) {
+        const r = svg.getBoundingClientRect(), s = Math.min(r.width / W, r.height / H);
+        const ox = (r.width - W * s) / 2, oy = (r.height - H * s) / 2;
+        return [ox + (x - x0) * s, oy + (y - y0) * s, s];
+      },
+      _estado: {},
+      estados(map, extras = {}) {
+        for (const id in vagaEl) {
+          const e = map[id] || 'livre';
+          if (api._estado[id] === e && !extras[id]) continue;
+          api._estado[id] = e;
+          const ve = vagaEl[id];
+          ve.carro && ve.carro.remove(); ve.carro = null;
+          ve.marca && ve.marca.remove(); ve.marca = null;
+          if (e === 'ocupada') {
+            const c = CARROS[hash(id) % CARROS.length];
+            const g = el('g', { transform: `translate(${ve.v.x} ${ve.v.y}) rotate(${ve.ang + 90})`, 'pointer-events': 'none' }, gEstado);
+            el('rect', { x: -2.15, y: -.9, width: 4.3, height: 1.8, rx: .55, fill: 'rgba(0,0,0,.35)', transform: 'translate(.15 .2)' }, g);
+            el('rect', { x: -2.1, y: -.88, width: 4.2, height: 1.76, rx: .55, fill: c, stroke: 'rgba(0,0,0,.4)', 'stroke-width': .08 }, g);
+            el('rect', { x: .35, y: -.72, width: .85, height: 1.44, rx: .2, fill: 'rgba(25,30,38,.82)' }, g);
+            el('rect', { x: -1.55, y: -.68, width: .55, height: 1.36, rx: .18, fill: 'rgba(25,30,38,.7)' }, g);
+            ve.carro = g;
+          } else if (e === 'reservada') {
+            ve.marca = el('rect', { x: -ve.w / 2 + .15, y: -ve.d / 2 + .15, width: ve.w - .3, height: ve.d - .3, fill: 'rgba(242,183,5,.35)', stroke: COR.reservada, 'stroke-width': .35, class: 'sp-res' }, ve.r);
+          } else if (opts.livresVerdes && ve.v.tipo === 'comum') {
+            ve.marca = el('rect', { x: -ve.w / 2 + .35, y: -ve.d / 2 + .35, width: ve.w - .7, height: ve.d - .7, rx: .3, fill: 'rgba(27,175,122,.28)' }, ve.r);
+            ve.r.insertBefore(ve.marca, ve.sobre);
+          }
+          if (extras[id]) ve.titulo.textContent = extras[id];
+        }
+      },
+      rota(pontos, destino) {
+        gRota.innerHTML = ''; gTopo.innerHTML = '';
+        if (!pontos || pontos.length < 2) return;
+        const d = pontos.map((p, i) => (i ? 'L' : 'M') + p[0] + ' ' + p[1]).join(' ');
+        el('path', { d, fill: 'none', stroke: 'rgba(0,0,0,.45)', 'stroke-width': 2.4, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, gRota);
+        el('path', { d, fill: 'none', stroke: '#fff7d6', 'stroke-width': 1.7, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, gRota);
+        el('path', { d, fill: 'none', stroke: COR.rota, 'stroke-width': 1.1, 'stroke-dasharray': '2.2 2.2', 'stroke-linejoin': 'round', class: 'sp-rota' }, gRota);
+        const [sx, sy] = pontos[0];
+        el('circle', { cx: sx, cy: sy, r: 1.6, fill: '#22262b', stroke: COR.rota, 'stroke-width': .5 }, gTopo);
+        const t = el('text', { x: sx + 2.6, y: sy + .6, 'font-size': 1.8, 'font-weight': 800, fill: '#fff', class: 'sp-txt', stroke: '#22262b', 'stroke-width': .5, 'paint-order': 'stroke' }, gTopo);
+        t.textContent = 'VOCÊ';
+        if (destino && vagaEl[destino]) {
+          const ve = vagaEl[destino];
+          el('rect', { x: -ve.w / 2 - .4, y: -ve.d / 2 - .4, width: ve.w + .8, height: ve.d + .8, rx: .4, fill: 'none', stroke: COR.rota, 'stroke-width': .6, class: 'sp-dest',
+            transform: `translate(${ve.v.x} ${ve.v.y}) rotate(${ve.ang})` }, gTopo);
+          const pino = el('g', { transform: `translate(${ve.v.x} ${ve.v.y - 5.4})` }, gTopo);
+          el('path', { d: 'M0 2.6 L-1.4 .9 A2.1 2.1 0 1 1 1.4 .9 Z', fill: COR.rota, stroke: '#22262b', 'stroke-width': .25 }, pino);
+          el('circle', { cx: 0, cy: -.5, r: .75, fill: '#22262b' }, pino);
+        }
+      },
+      calor(valores, rotulo = '') {
+        // uso escala relativa (da vaga menos usada à mais usada) para a diferença aparecer no mapa
+        api.limpar();
+        const vs = Object.values(valores), mn = Math.min(...vs, 0), mx = Math.max(...vs, 1);
+        for (const id in vagaEl) {
+          const p = valores[id] ?? 0, ve = vagaEl[id], a = .08 + .87 * Math.max(0, Math.min(1, (p - mn) / ((mx - mn) || 1)));
+          ve.marca = el('rect', { x: -ve.w / 2 + .12, y: -ve.d / 2 + .12, width: ve.w - .24, height: ve.d - .24, fill: `rgba(57,135,229,${a.toFixed(2)})` }, ve.r);
+          ve.r.insertBefore(ve.marca, ve.sobre);
+          ve.titulo.textContent = `Vaga ${id} · ${Math.round(p)}% ${rotulo}`;
+        }
+      },
+      saude(mapa) {
+        api.limpar();
+        const cor = { atencao: 'rgba(237,161,0,.85)', falha: 'rgba(227,73,72,.9)' };
+        for (const id in vagaEl) {
+          const s = mapa[id] || 'ok', ve = vagaEl[id];
+          if (s === 'ok') continue;
+          ve.marca = el('rect', { x: -ve.w / 2 + .12, y: -ve.d / 2 + .12, width: ve.w - .24, height: ve.d - .24, fill: cor[s], class: 'sp-res' }, ve.r);
+          ve.r.insertBefore(ve.marca, ve.sobre);
+        }
+      },
+      limpar() {
+        for (const id in vagaEl) {
+          const ve = vagaEl[id];
+          ve.carro && ve.carro.remove(); ve.carro = null;
+          ve.marca && ve.marca.remove(); ve.marca = null;
+        }
+        api._estado = {};
+        gRota.innerHTML = ''; gTopo.innerHTML = '';
+      },
+      contagem(map) {
+        const r = { comum: [0, 0], idoso: [0, 0], pcd: [0, 0] };
+        for (const v of L.vagas) { r[v.tipo][1]++; if ((map[v.id] || 'livre') === 'livre') r[v.tipo][0]++; }
+        return r;
+      },
+    };
+    return api;
+  }
+
+  window.SmartPlanta = { criar, COR };
+})();
+
+</script>
+<script>
+const D = {"layout":{"nome":"Igreja Batista Atitude — planta (250 vagas)","entrada":"E0","porta":[30.0,16.5],"nos":[{"id":"E0","x":20,"y":102,"nome":"guarita"},{"id":"N1","x":20,"y":66,"nome":"esquina da entrada"},{"id":"N0","x":20,"y":27,"nome":"esquina do restaurante"},{"id":"T0","x":56,"y":27,"nome":"esquina da livraria"},{"id":"K0","x":56,"y":5,"nome":"via norte"},{"id":"B0","x":56,"y":66,"nome":"via sul"},{"id":"BZ","x":192,"y":66,"nome":"via de saída"},{"id":"S0","x":192,"y":102,"nome":"saída"},{"id":"KC","x":72,"y":5,"nome":"topo do corredor C"},{"id":"KD","x":90,"y":5,"nome":"topo do corredor D"},{"id":"KE","x":108,"y":5,"nome":"topo do corredor E"},{"id":"KF","x":126,"y":5,"nome":"topo do corredor F"},{"id":"KG","x":144,"y":5,"nome":"topo do corredor G"},{"id":"KH","x":162,"y":5,"nome":"topo do corredor H"},{"id":"KI","x":180,"y":5,"nome":"topo do corredor I"},{"id":"BC","x":72,"y":66,"nome":"corredor C"},{"id":"BD","x":90,"y":66,"nome":"corredor D"},{"id":"BE","x":108,"y":66,"nome":"corredor E"},{"id":"BF","x":126,"y":66,"nome":"corredor F"},{"id":"BG","x":144,"y":66,"nome":"corredor G"},{"id":"BH","x":162,"y":66,"nome":"corredor H"},{"id":"BI","x":180,"y":66,"nome":"corredor I"}],"arestas":[{"a":"E0","b":"N1","comprimento":36.0,"tipo":"via","zona":null},{"a":"N1","b":"B0","comprimento":36.0,"tipo":"corredor","zona":"B"},{"a":"N0","b":"N1","comprimento":39.0,"tipo":"corredor","zona":"B"},{"a":"N0","b":"T0","comprimento":36.0,"tipo":"corredor","zona":"A"},{"a":"T0","b":"K0","comprimento":22.0,"tipo":"via","zona":null},{"a":"T0","b":"B0","comprimento":39.0,"tipo":"via","zona":null},{"a":"K0","b":"KC","comprimento":16.0,"tipo":"via","zona":null},{"a":"B0","b":"BC","comprimento":16.0,"tipo":"via","zona":null},{"a":"BI","b":"BZ","comprimento":12.0,"tipo":"via","zona":null},{"a":"BZ","b":"S0","comprimento":36.0,"tipo":"via","zona":null},{"a":"KC","b":"KD","comprimento":18.0,"tipo":"via","zona":null},{"a":"BC","b":"BD","comprimento":18.0,"tipo":"via","zona":null},{"a":"KD","b":"KE","comprimento":18.0,"tipo":"via","zona":null},{"a":"BD","b":"BE","comprimento":18.0,"tipo":"via","zona":null},{"a":"KE","b":"KF","comprimento":18.0,"tipo":"via","zona":null},{"a":"BE","b":"BF","comprimento":18.0,"tipo":"via","zona":null},{"a":"KF","b":"KG","comprimento":18.0,"tipo":"via","zona":null},{"a":"BF","b":"BG","comprimento":18.0,"tipo":"via","zona":null},{"a":"KG","b":"KH","comprimento":18.0,"tipo":"via","zona":null},{"a":"BG","b":"BH","comprimento":18.0,"tipo":"via","zona":null},{"a":"KH","b":"KI","comprimento":18.0,"tipo":"via","zona":null},{"a":"BH","b":"BI","comprimento":18.0,"tipo":"via","zona":null},{"a":"KC","b":"BC","comprimento":61.0,"tipo":"corredor","zona":"C"},{"a":"KD","b":"BD","comprimento":61.0,"tipo":"corredor","zona":"D"},{"a":"KE","b":"BE","comprimento":61.0,"tipo":"corredor","zona":"E"},{"a":"KF","b":"BF","comprimento":61.0,"tipo":"corredor","zona":"F"},{"a":"KG","b":"BG","comprimento":61.0,"tipo":"corredor","zona":"G"},{"a":"KH","b":"BH","comprimento":61.0,"tipo":"corredor","zona":"H"},{"a":"KI","b":"BI","comprimento":61.0,"tipo":"corredor","zona":"I"}],"vagas":[{"id":"01","zona":"A","aresta":["N0","T0"],"offset":4.75,"lado":-1,"tipo":"pcd","x":24.75,"y":21.0,"largura":3.5},{"id":"02","zona":"A","aresta":["N0","T0"],"offset":7.75,"lado":-1,"tipo":"idoso","x":27.75,"y":21.0,"largura":2.5},{"id":"03","zona":"A","aresta":["N0","T0"],"offset":10.25,"lado":-1,"tipo":"idoso","x":30.25,"y":21.0,"largura":2.5},{"id":"04","zona":"A","aresta":["N0","T0"],"offset":12.75,"lado":-1,"tipo":"idoso","x":32.75,"y":21.0,"largura":2.5},{"id":"05","zona":"A","aresta":["N0","T0"],"offset":15.25,"lado":-1,"tipo":"idoso","x":35.25,"y":21.0,"largura":2.5},{"id":"06","zona":"A","aresta":["N0","T0"],"offset":17.75,"lado":-1,"tipo":"idoso","x":37.75,"y":21.0,"largura":2.5},{"id":"07","zona":"A","aresta":["N0","T0"],"offset":20.25,"lado":-1,"tipo":"idoso","x":40.25,"y":21.0,"largura":2.5},{"id":"08","zona":"A","aresta":["N0","T0"],"offset":22.75,"lado":-1,"tipo":"idoso","x":42.75,"y":21.0,"largura":2.5},{"id":"09","zona":"A","aresta":["N0","T0"],"offset":25.25,"lado":-1,"tipo":"idoso","x":45.25,"y":21.0,"largura":2.5},{"id":"10","zona":"A","aresta":["N0","T0"],"offset":27.75,"lado":-1,"tipo":"idoso","x":47.75,"y":21.0,"largura":2.5},{"id":"11","zona":"A","aresta":["N0","T0"],"offset":30.25,"lado":-1,"tipo":"idoso","x":50.25,"y":21.0,"largura":2.5},{"id":"12","zona":"B","aresta":["N0","N1"],"offset":12.25,"lado":1,"tipo":"idoso","x":14.0,"y":39.25,"largura":2.5},{"id":"13","zona":"B","aresta":["N0","N1"],"offset":14.75,"lado":1,"tipo":"idoso","x":14.0,"y":41.75,"largura":2.5},{"id":"14","zona":"B","aresta":["N1","B0"],"offset":13.75,"lado":-1,"tipo":"pcd","x":33.75,"y":60.0,"largura":3.5},{"id":"15","zona":"B","aresta":["N1","B0"],"offset":17.25,"lado":-1,"tipo":"pcd","x":37.25,"y":60.0,"largura":3.5},{"id":"16","zona":"B","aresta":["N1","B0"],"offset":20.25,"lado":-1,"tipo":"idoso","x":40.25,"y":60.0,"largura":2.5},{"id":"17","zona":"C","aresta":["KC","BC"],"offset":33.75,"lado":1,"tipo":"comum","x":66.5,"y":38.75,"largura":2.5},{"id":"18","zona":"C","aresta":["KC","BC"],"offset":36.25,"lado":1,"tipo":"comum","x":66.5,"y":41.25,"largura":2.5},{"id":"19","zona":"C","aresta":["KC","BC"],"offset":38.75,"lado":1,"tipo":"comum","x":66.5,"y":43.75,"largura":2.5},{"id":"20","zona":"C","aresta":["KC","BC"],"offset":41.25,"lado":1,"tipo":"comum","x":66.5,"y":46.25,"largura":2.5},{"id":"21","zona":"C","aresta":["KC","BC"],"offset":43.75,"lado":1,"tipo":"comum","x":66.5,"y":48.75,"largura":2.5},{"id":"22","zona":"C","aresta":["KC","BC"],"offset":46.25,"lado":1,"tipo":"comum","x":66.5,"y":51.25,"largura":2.5},{"id":"23","zona":"C","aresta":["KC","BC"],"offset":48.75,"lado":1,"tipo":"comum","x":66.5,"y":53.75,"largura":2.5},{"id":"24","zona":"C","aresta":["KC","BC"],"offset":51.25,"lado":1,"tipo":"comum","x":66.5,"y":56.25,"largura":2.5},{"id":"25","zona":"C","aresta":["KC","BC"],"offset":53.75,"lado":1,"tipo":"comum","x":66.5,"y":58.75,"largura":2.5},{"id":"26","zona":"C","aresta":["KC","BC"],"offset":36.25,"lado":-1,"tipo":"comum","x":77.5,"y":41.25,"largura":2.5},{"id":"27","zona":"C","aresta":["KC","BC"],"offset":38.75,"lado":-1,"tipo":"comum","x":77.5,"y":43.75,"largura":2.5},{"id":"28","zona":"C","aresta":["KC","BC"],"offset":41.25,"lado":-1,"tipo":"comum","x":77.5,"y":46.25,"largura":2.5},{"id":"29","zona":"C","aresta":["KC","BC"],"offset":43.75,"lado":-1,"tipo":"comum","x":77.5,"y":48.75,"largura":2.5},{"id":"30","zona":"C","aresta":["KC","BC"],"offset":46.25,"lado":-1,"tipo":"comum","x":77.5,"y":51.25,"largura":2.5},{"id":"31","zona":"C","aresta":["KC","BC"],"offset":48.75,"lado":-1,"tipo":"comum","x":77.5,"y":53.75,"largura":2.5},{"id":"32","zona":"C","aresta":["KC","BC"],"offset":51.25,"lado":-1,"tipo":"comum","x":77.5,"y":56.25,"largura":2.5},{"id":"33","zona":"C","aresta":["KC","BC"],"offset":53.75,"lado":-1,"tipo":"comum","x":77.5,"y":58.75,"largura":2.5},{"id":"34","zona":"D","aresta":["KD","BD"],"offset":33.75,"lado":1,"tipo":"comum","x":84.5,"y":38.75,"largura":2.5},{"id":"35","zona":"D","aresta":["KD","BD"],"offset":36.25,"lado":1,"tipo":"comum","x":84.5,"y":41.25,"largura":2.5},{"id":"36","zona":"D","aresta":["KD","BD"],"offset":38.75,"lado":1,"tipo":"comum","x":84.5,"y":43.75,"largura":2.5},{"id":"37","zona":"D","aresta":["KD","BD"],"offset":41.25,"lado":1,"tipo":"comum","x":84.5,"y":46.25,"largura":2.5},{"id":"38","zona":"D","aresta":["KD","BD"],"offset":43.75,"lado":1,"tipo":"comum","x":84.5,"y":48.75,"largura":2.5},{"id":"39","zona":"D","aresta":["KD","BD"],"offset":46.25,"lado":1,"tipo":"comum","x":84.5,"y":51.25,"largura":2.5},{"id":"40","zona":"D","aresta":["KD","BD"],"offset":48.75,"lado":1,"tipo":"comum","x":84.5,"y":53.75,"largura":2.5},{"id":"41","zona":"D","aresta":["KD","BD"],"offset":51.25,"lado":1,"tipo":"comum","x":84.5,"y":56.25,"largura":2.5},{"id":"42","zona":"D","aresta":["KD","BD"],"offset":53.75,"lado":1,"tipo":"comum","x":84.5,"y":58.75,"largura":2.5},{"id":"43","zona":"D","aresta":["KD","BD"],"offset":36.25,"lado":-1,"tipo":"comum","x":95.5,"y":41.25,"largura":2.5},{"id":"44","zona":"D","aresta":["KD","BD"],"offset":38.75,"lado":-1,"tipo":"comum","x":95.5,"y":43.75,"largura":2.5},{"id":"45","zona":"D","aresta":["KD","BD"],"offset":41.25,"lado":-1,"tipo":"comum","x":95.5,"y":46.25,"largura":2.5},{"id":"46","zona":"D","aresta":["KD","BD"],"offset":43.75,"lado":-1,"tipo":"comum","x":95.5,"y":48.75,"largura":2.5},{"id":"47","zona":"D","aresta":["KD","BD"],"offset":46.25,"lado":-1,"tipo":"comum","x":95.5,"y":51.25,"largura":2.5},{"id":"48","zona":"D","aresta":["KD","BD"],"offset":48.75,"lado":-1,"tipo":"comum","x":95.5,"y":53.75,"largura":2.5},{"id":"49","zona":"D","aresta":["KD","BD"],"offset":51.25,"lado":-1,"tipo":"comum","x":95.5,"y":56.25,"largura":2.5},{"id":"50","zona":"D","aresta":["KD","BD"],"offset":53.75,"lado":-1,"tipo":"comum","x":95.5,"y":58.75,"largura":2.5},{"id":"51","zona":"E","aresta":["KE","BE"],"offset":6.25,"lado":1,"tipo":"comum","x":102.5,"y":11.25,"largura":2.5},{"id":"52","zona":"E","aresta":["KE","BE"],"offset":8.75,"lado":1,"tipo":"comum","x":102.5,"y":13.75,"largura":2.5},{"id":"53","zona":"E","aresta":["KE","BE"],"offset":11.25,"lado":1,"tipo":"comum","x":102.5,"y":16.25,"largura":2.5},{"id":"54","zona":"E","aresta":["KE","BE"],"offset":13.75,"lado":1,"tipo":"comum","x":102.5,"y":18.75,"largura":2.5},{"id":"55","zona":"E","aresta":["KE","BE"],"offset":16.25,"lado":1,"tipo":"comum","x":102.5,"y":21.25,"largura":2.5},{"id":"56","zona":"E","aresta":["KE","BE"],"offset":18.75,"lado":1,"tipo":"comum","x":102.5,"y":23.75,"largura":2.5},{"id":"57","zona":"E","aresta":["KE","BE"],"offset":21.25,"lado":1,"tipo":"comum","x":102.5,"y":26.25,"largura":2.5},{"id":"58","zona":"E","aresta":["KE","BE"],"offset":23.75,"lado":1,"tipo":"comum","x":102.5,"y":28.75,"largura":2.5},{"id":"59","zona":"E","aresta":["KE","BE"],"offset":26.25,"lado":1,"tipo":"comum","x":102.5,"y":31.25,"largura":2.5},{"id":"60","zona":"E","aresta":["KE","BE"],"offset":28.75,"lado":1,"tipo":"comum","x":102.5,"y":33.75,"largura":2.5},{"id":"61","zona":"E","aresta":["KE","BE"],"offset":31.25,"lado":1,"tipo":"comum","x":102.5,"y":36.25,"largura":2.5},{"id":"62","zona":"E","aresta":["KE","BE"],"offset":33.75,"lado":1,"tipo":"comum","x":102.5,"y":38.75,"largura":2.5},{"id":"63","zona":"E","aresta":["KE","BE"],"offset":36.25,"lado":1,"tipo":"comum","x":102.5,"y":41.25,"largura":2.5},{"id":"64","zona":"E","aresta":["KE","BE"],"offset":38.75,"lado":1,"tipo":"comum","x":102.5,"y":43.75,"largura":2.5},{"id":"65","zona":"E","aresta":["KE","BE"],"offset":41.25,"lado":1,"tipo":"comum","x":102.5,"y":46.25,"largura":2.5},{"id":"66","zona":"E","aresta":["KE","BE"],"offset":43.75,"lado":1,"tipo":"comum","x":102.5,"y":48.75,"largura":2.5},{"id":"67","zona":"E","aresta":["KE","BE"],"offset":46.25,"lado":1,"tipo":"comum","x":102.5,"y":51.25,"largura":2.5},{"id":"68","zona":"E","aresta":["KE","BE"],"offset":48.75,"lado":1,"tipo":"comum","x":102.5,"y":53.75,"largura":2.5},{"id":"69","zona":"E","aresta":["KE","BE"],"offset":51.25,"lado":1,"tipo":"idoso","x":102.5,"y":56.25,"largura":2.5},{"id":"70","zona":"E","aresta":["KE","BE"],"offset":53.75,"lado":1,"tipo":"pcd","x":102.5,"y":58.75,"largura":2.5},{"id":"71","zona":"E","aresta":["KE","BE"],"offset":6.25,"lado":-1,"tipo":"comum","x":113.5,"y":11.25,"largura":2.5},{"id":"72","zona":"E","aresta":["KE","BE"],"offset":8.75,"lado":-1,"tipo":"comum","x":113.5,"y":13.75,"largura":2.5},{"id":"73","zona":"E","aresta":["KE","BE"],"offset":11.25,"lado":-1,"tipo":"comum","x":113.5,"y":16.25,"largura":2.5},{"id":"74","zona":"E","aresta":["KE","BE"],"offset":13.75,"lado":-1,"tipo":"comum","x":113.5,"y":18.75,"largura":2.5},{"id":"75","zona":"E","aresta":["KE","BE"],"offset":16.25,"lado":-1,"tipo":"comum","x":113.5,"y":21.25,"largura":2.5},{"id":"76","zona":"E","aresta":["KE","BE"],"offset":18.75,"lado":-1,"tipo":"comum","x":113.5,"y":23.75,"largura":2.5},{"id":"77","zona":"E","aresta":["KE","BE"],"offset":21.25,"lado":-1,"tipo":"comum","x":113.5,"y":26.25,"largura":2.5},{"id":"78","zona":"E","aresta":["KE","BE"],"offset":23.75,"lado":-1,"tipo":"comum","x":113.5,"y":28.75,"largura":2.5},{"id":"79","zona":"E","aresta":["KE","BE"],"offset":26.25,"lado":-1,"tipo":"comum","x":113.5,"y":31.25,"largura":2.5},{"id":"80","zona":"E","aresta":["KE","BE"],"offset":28.75,"lado":-1,"tipo":"comum","x":113.5,"y":33.75,"largura":2.5},{"id":"81","zona":"E","aresta":["KE","BE"],"offset":31.25,"lado":-1,"tipo":"comum","x":113.5,"y":36.25,"largura":2.5},{"id":"82","zona":"E","aresta":["KE","BE"],"offset":33.75,"lado":-1,"tipo":"comum","x":113.5,"y":38.75,"largura":2.5},{"id":"83","zona":"E","aresta":["KE","BE"],"offset":36.25,"lado":-1,"tipo":"comum","x":113.5,"y":41.25,"largura":2.5},{"id":"84","zona":"E","aresta":["KE","BE"],"offset":38.75,"lado":-1,"tipo":"comum","x":113.5,"y":43.75,"largura":2.5},{"id":"85","zona":"E","aresta":["KE","BE"],"offset":41.25,"lado":-1,"tipo":"comum","x":113.5,"y":46.25,"largura":2.5},{"id":"86","zona":"E","aresta":["KE","BE"],"offset":43.75,"lado":-1,"tipo":"comum","x":113.5,"y":48.75,"largura":2.5},{"id":"87","zona":"E","aresta":["KE","BE"],"offset":46.25,"lado":-1,"tipo":"comum","x":113.5,"y":51.25,"largura":2.5},{"id":"88","zona":"E","aresta":["KE","BE"],"offset":48.75,"lado":-1,"tipo":"comum","x":113.5,"y":53.75,"largura":2.5},{"id":"89","zona":"E","aresta":["KE","BE"],"offset":51.25,"lado":-1,"tipo":"comum","x":113.5,"y":56.25,"largura":2.5},{"id":"90","zona":"E","aresta":["KE","BE"],"offset":53.75,"lado":-1,"tipo":"comum","x":113.5,"y":58.75,"largura":2.5},{"id":"91","zona":"F","aresta":["KF","BF"],"offset":6.25,"lado":1,"tipo":"comum","x":120.5,"y":11.25,"largura":2.5},{"id":"92","zona":"F","aresta":["KF","BF"],"offset":8.75,"lado":1,"tipo":"comum","x":120.5,"y":13.75,"largura":2.5},{"id":"93","zona":"F","aresta":["KF","BF"],"offset":11.25,"lado":1,"tipo":"comum","x":120.5,"y":16.25,"largura":2.5},{"id":"94","zona":"F","aresta":["KF","BF"],"offset":13.75,"lado":1,"tipo":"comum","x":120.5,"y":18.75,"largura":2.5},{"id":"95","zona":"F","aresta":["KF","BF"],"offset":16.25,"lado":1,"tipo":"comum","x":120.5,"y":21.25,"largura":2.5},{"id":"96","zona":"F","aresta":["KF","BF"],"offset":18.75,"lado":1,"tipo":"comum","x":120.5,"y":23.75,"largura":2.5},{"id":"97","zona":"F","aresta":["KF","BF"],"offset":21.25,"lado":1,"tipo":"comum","x":120.5,"y":26.25,"largura":2.5},{"id":"98","zona":"F","aresta":["KF","BF"],"offset":23.75,"lado":1,"tipo":"comum","x":120.5,"y":28.75,"largura":2.5},{"id":"99","zona":"F","aresta":["KF","BF"],"offset":26.25,"lado":1,"tipo":"comum","x":120.5,"y":31.25,"largura":2.5},{"id":"100","zona":"F","aresta":["KF","BF"],"offset":28.75,"lado":1,"tipo":"comum","x":120.5,"y":33.75,"largura":2.5},{"id":"101","zona":"F","aresta":["KF","BF"],"offset":31.25,"lado":1,"tipo":"comum","x":120.5,"y":36.25,"largura":2.5},{"id":"102","zona":"F","aresta":["KF","BF"],"offset":33.75,"lado":1,"tipo":"comum","x":120.5,"y":38.75,"largura":2.5},{"id":"103","zona":"F","aresta":["KF","BF"],"offset":36.25,"lado":1,"tipo":"comum","x":120.5,"y":41.25,"largura":2.5},{"id":"104","zona":"F","aresta":["KF","BF"],"offset":38.75,"lado":1,"tipo":"comum","x":120.5,"y":43.75,"largura":2.5},{"id":"105","zona":"F","aresta":["KF","BF"],"offset":41.25,"lado":1,"tipo":"comum","x":120.5,"y":46.25,"largura":2.5},{"id":"106","zona":"F","aresta":["KF","BF"],"offset":43.75,"lado":1,"tipo":"comum","x":120.5,"y":48.75,"largura":2.5},{"id":"107","zona":"F","aresta":["KF","BF"],"offset":46.25,"lado":1,"tipo":"comum","x":120.5,"y":51.25,"largura":2.5},{"id":"108","zona":"F","aresta":["KF","BF"],"offset":48.75,"lado":1,"tipo":"comum","x":120.5,"y":53.75,"largura":2.5},{"id":"109","zona":"F","aresta":["KF","BF"],"offset":51.25,"lado":1,"tipo":"idoso","x":120.5,"y":56.25,"largura":2.5},{"id":"110","zona":"F","aresta":["KF","BF"],"offset":53.75,"lado":1,"tipo":"idoso","x":120.5,"y":58.75,"largura":2.5},{"id":"111","zona":"F","aresta":["KF","BF"],"offset":6.25,"lado":-1,"tipo":"comum","x":131.5,"y":11.25,"largura":2.5},{"id":"112","zona":"F","aresta":["KF","BF"],"offset":8.75,"lado":-1,"tipo":"comum","x":131.5,"y":13.75,"largura":2.5},{"id":"113","zona":"F","aresta":["KF","BF"],"offset":11.25,"lado":-1,"tipo":"comum","x":131.5,"y":16.25,"largura":2.5},{"id":"114","zona":"F","aresta":["KF","BF"],"offset":13.75,"lado":-1,"tipo":"comum","x":131.5,"y":18.75,"largura":2.5},{"id":"115","zona":"F","aresta":["KF","BF"],"offset":16.25,"lado":-1,"tipo":"comum","x":131.5,"y":21.25,"largura":2.5},{"id":"116","zona":"F","aresta":["KF","BF"],"offset":18.75,"lado":-1,"tipo":"comum","x":131.5,"y":23.75,"largura":2.5},{"id":"117","zona":"F","aresta":["KF","BF"],"offset":21.25,"lado":-1,"tipo":"comum","x":131.5,"y":26.25,"largura":2.5},{"id":"118","zona":"F","aresta":["KF","BF"],"offset":23.75,"lado":-1,"tipo":"comum","x":131.5,"y":28.75,"largura":2.5},{"id":"119","zona":"F","aresta":["KF","BF"],"offset":26.25,"lado":-1,"tipo":"comum","x":131.5,"y":31.25,"largura":2.5},{"id":"120","zona":"F","aresta":["KF","BF"],"offset":28.75,"lado":-1,"tipo":"comum","x":131.5,"y":33.75,"largura":2.5},{"id":"121","zona":"F","aresta":["KF","BF"],"offset":31.25,"lado":-1,"tipo":"comum","x":131.5,"y":36.25,"largura":2.5},{"id":"122","zona":"F","aresta":["KF","BF"],"offset":33.75,"lado":-1,"tipo":"comum","x":131.5,"y":38.75,"largura":2.5},{"id":"123","zona":"F","aresta":["KF","BF"],"offset":36.25,"lado":-1,"tipo":"comum","x":131.5,"y":41.25,"largura":2.5},{"id":"124","zona":"F","aresta":["KF","BF"],"offset":38.75,"lado":-1,"tipo":"comum","x":131.5,"y":43.75,"largura":2.5},{"id":"125","zona":"F","aresta":["KF","BF"],"offset":41.25,"lado":-1,"tipo":"comum","x":131.5,"y":46.25,"largura":2.5},{"id":"126","zona":"F","aresta":["KF","BF"],"offset":43.75,"lado":-1,"tipo":"comum","x":131.5,"y":48.75,"largura":2.5},{"id":"127","zona":"F","aresta":["KF","BF"],"offset":46.25,"lado":-1,"tipo":"comum","x":131.5,"y":51.25,"largura":2.5},{"id":"128","zona":"F","aresta":["KF","BF"],"offset":48.75,"lado":-1,"tipo":"comum","x":131.5,"y":53.75,"largura":2.5},{"id":"129","zona":"F","aresta":["KF","BF"],"offset":51.25,"lado":-1,"tipo":"comum","x":131.5,"y":56.25,"largura":2.5},{"id":"130","zona":"F","aresta":["KF","BF"],"offset":53.75,"lado":-1,"tipo":"comum","x":131.5,"y":58.75,"largura":2.5},{"id":"131","zona":"G","aresta":["KG","BG"],"offset":6.25,"lado":1,"tipo":"comum","x":138.5,"y":11.25,"largura":2.5},{"id":"132","zona":"G","aresta":["KG","BG"],"offset":8.75,"lado":1,"tipo":"comum","x":138.5,"y":13.75,"largura":2.5},{"id":"133","zona":"G","aresta":["KG","BG"],"offset":11.25,"lado":1,"tipo":"comum","x":138.5,"y":16.25,"largura":2.5},{"id":"134","zona":"G","aresta":["KG","BG"],"offset":13.75,"lado":1,"tipo":"comum","x":138.5,"y":18.75,"largura":2.5},{"id":"135","zona":"G","aresta":["KG","BG"],"offset":16.25,"lado":1,"tipo":"comum","x":138.5,"y":21.25,"largura":2.5},{"id":"136","zona":"G","aresta":["KG","BG"],"offset":18.75,"lado":1,"tipo":"comum","x":138.5,"y":23.75,"largura":2.5},{"id":"137","zona":"G","aresta":["KG","BG"],"offset":21.25,"lado":1,"tipo":"comum","x":138.5,"y":26.25,"largura":2.5},{"id":"138","zona":"G","aresta":["KG","BG"],"offset":23.75,"lado":1,"tipo":"comum","x":138.5,"y":28.75,"largura":2.5},{"id":"139","zona":"G","aresta":["KG","BG"],"offset":26.25,"lado":1,"tipo":"comum","x":138.5,"y":31.25,"largura":2.5},{"id":"140","zona":"G","aresta":["KG","BG"],"offset":28.75,"lado":1,"tipo":"comum","x":138.5,"y":33.75,"largura":2.5},{"id":"141","zona":"G","aresta":["KG","BG"],"offset":31.25,"lado":1,"tipo":"comum","x":138.5,"y":36.25,"largura":2.5},{"id":"142","zona":"G","aresta":["KG","BG"],"offset":33.75,"lado":1,"tipo":"comum","x":138.5,"y":38.75,"largura":2.5},{"id":"143","zona":"G","aresta":["KG","BG"],"offset":36.25,"lado":1,"tipo":"comum","x":138.5,"y":41.25,"largura":2.5},{"id":"144","zona":"G","aresta":["KG","BG"],"offset":38.75,"lado":1,"tipo":"comum","x":138.5,"y":43.75,"largura":2.5},{"id":"145","zona":"G","aresta":["KG","BG"],"offset":41.25,"lado":1,"tipo":"comum","x":138.5,"y":46.25,"largura":2.5},{"id":"146","zona":"G","aresta":["KG","BG"],"offset":43.75,"lado":1,"tipo":"comum","x":138.5,"y":48.75,"largura":2.5},{"id":"147","zona":"G","aresta":["KG","BG"],"offset":46.25,"lado":1,"tipo":"comum","x":138.5,"y":51.25,"largura":2.5},{"id":"148","zona":"G","aresta":["KG","BG"],"offset":48.75,"lado":1,"tipo":"comum","x":138.5,"y":53.75,"largura":2.5},{"id":"149","zona":"G","aresta":["KG","BG"],"offset":51.25,"lado":1,"tipo":"idoso","x":138.5,"y":56.25,"largura":2.5},{"id":"150","zona":"G","aresta":["KG","BG"],"offset":53.75,"lado":1,"tipo":"pcd","x":138.5,"y":58.75,"largura":2.5},{"id":"151","zona":"G","aresta":["KG","BG"],"offset":6.25,"lado":-1,"tipo":"comum","x":149.5,"y":11.25,"largura":2.5},{"id":"152","zona":"G","aresta":["KG","BG"],"offset":8.75,"lado":-1,"tipo":"comum","x":149.5,"y":13.75,"largura":2.5},{"id":"153","zona":"G","aresta":["KG","BG"],"offset":11.25,"lado":-1,"tipo":"comum","x":149.5,"y":16.25,"largura":2.5},{"id":"154","zona":"G","aresta":["KG","BG"],"offset":13.75,"lado":-1,"tipo":"comum","x":149.5,"y":18.75,"largura":2.5},{"id":"155","zona":"G","aresta":["KG","BG"],"offset":16.25,"lado":-1,"tipo":"comum","x":149.5,"y":21.25,"largura":2.5},{"id":"156","zona":"G","aresta":["KG","BG"],"offset":18.75,"lado":-1,"tipo":"comum","x":149.5,"y":23.75,"largura":2.5},{"id":"157","zona":"G","aresta":["KG","BG"],"offset":21.25,"lado":-1,"tipo":"comum","x":149.5,"y":26.25,"largura":2.5},{"id":"158","zona":"G","aresta":["KG","BG"],"offset":23.75,"lado":-1,"tipo":"comum","x":149.5,"y":28.75,"largura":2.5},{"id":"159","zona":"G","aresta":["KG","BG"],"offset":26.25,"lado":-1,"tipo":"comum","x":149.5,"y":31.25,"largura":2.5},{"id":"160","zona":"G","aresta":["KG","BG"],"offset":28.75,"lado":-1,"tipo":"comum","x":149.5,"y":33.75,"largura":2.5},{"id":"161","zona":"G","aresta":["KG","BG"],"offset":31.25,"lado":-1,"tipo":"comum","x":149.5,"y":36.25,"largura":2.5},{"id":"162","zona":"G","aresta":["KG","BG"],"offset":33.75,"lado":-1,"tipo":"comum","x":149.5,"y":38.75,"largura":2.5},{"id":"163","zona":"G","aresta":["KG","BG"],"offset":36.25,"lado":-1,"tipo":"comum","x":149.5,"y":41.25,"largura":2.5},{"id":"164","zona":"G","aresta":["KG","BG"],"offset":38.75,"lado":-1,"tipo":"comum","x":149.5,"y":43.75,"largura":2.5},{"id":"165","zona":"G","aresta":["KG","BG"],"offset":41.25,"lado":-1,"tipo":"comum","x":149.5,"y":46.25,"largura":2.5},{"id":"166","zona":"G","aresta":["KG","BG"],"offset":43.75,"lado":-1,"tipo":"comum","x":149.5,"y":48.75,"largura":2.5},{"id":"167","zona":"G","aresta":["KG","BG"],"offset":46.25,"lado":-1,"tipo":"comum","x":149.5,"y":51.25,"largura":2.5},{"id":"168","zona":"G","aresta":["KG","BG"],"offset":48.75,"lado":-1,"tipo":"comum","x":149.5,"y":53.75,"largura":2.5},{"id":"169","zona":"G","aresta":["KG","BG"],"offset":51.25,"lado":-1,"tipo":"comum","x":149.5,"y":56.25,"largura":2.5},{"id":"170","zona":"G","aresta":["KG","BG"],"offset":53.75,"lado":-1,"tipo":"comum","x":149.5,"y":58.75,"largura":2.5},{"id":"171","zona":"H","aresta":["KH","BH"],"offset":6.25,"lado":1,"tipo":"comum","x":156.5,"y":11.25,"largura":2.5},{"id":"172","zona":"H","aresta":["KH","BH"],"offset":8.75,"lado":1,"tipo":"comum","x":156.5,"y":13.75,"largura":2.5},{"id":"173","zona":"H","aresta":["KH","BH"],"offset":11.25,"lado":1,"tipo":"comum","x":156.5,"y":16.25,"largura":2.5},{"id":"174","zona":"H","aresta":["KH","BH"],"offset":13.75,"lado":1,"tipo":"comum","x":156.5,"y":18.75,"largura":2.5},{"id":"175","zona":"H","aresta":["KH","BH"],"offset":16.25,"lado":1,"tipo":"comum","x":156.5,"y":21.25,"largura":2.5},{"id":"176","zona":"H","aresta":["KH","BH"],"offset":18.75,"lado":1,"tipo":"comum","x":156.5,"y":23.75,"largura":2.5},{"id":"177","zona":"H","aresta":["KH","BH"],"offset":21.25,"lado":1,"tipo":"comum","x":156.5,"y":26.25,"largura":2.5},{"id":"178","zona":"H","aresta":["KH","BH"],"offset":23.75,"lado":1,"tipo":"comum","x":156.5,"y":28.75,"largura":2.5},{"id":"179","zona":"H","aresta":["KH","BH"],"offset":26.25,"lado":1,"tipo":"comum","x":156.5,"y":31.25,"largura":2.5},{"id":"180","zona":"H","aresta":["KH","BH"],"offset":28.75,"lado":1,"tipo":"comum","x":156.5,"y":33.75,"largura":2.5},{"id":"181","zona":"H","aresta":["KH","BH"],"offset":31.25,"lado":1,"tipo":"comum","x":156.5,"y":36.25,"largura":2.5},{"id":"182","zona":"H","aresta":["KH","BH"],"offset":33.75,"lado":1,"tipo":"comum","x":156.5,"y":38.75,"largura":2.5},{"id":"183","zona":"H","aresta":["KH","BH"],"offset":36.25,"lado":1,"tipo":"comum","x":156.5,"y":41.25,"largura":2.5},{"id":"184","zona":"H","aresta":["KH","BH"],"offset":38.75,"lado":1,"tipo":"comum","x":156.5,"y":43.75,"largura":2.5},{"id":"185","zona":"H","aresta":["KH","BH"],"offset":41.25,"lado":1,"tipo":"comum","x":156.5,"y":46.25,"largura":2.5},{"id":"186","zona":"H","aresta":["KH","BH"],"offset":43.75,"lado":1,"tipo":"comum","x":156.5,"y":48.75,"largura":2.5},{"id":"187","zona":"H","aresta":["KH","BH"],"offset":46.25,"lado":1,"tipo":"comum","x":156.5,"y":51.25,"largura":2.5},{"id":"188","zona":"H","aresta":["KH","BH"],"offset":48.75,"lado":1,"tipo":"comum","x":156.5,"y":53.75,"largura":2.5},{"id":"189","zona":"H","aresta":["KH","BH"],"offset":51.25,"lado":1,"tipo":"idoso","x":156.5,"y":56.25,"largura":2.5},{"id":"190","zona":"H","aresta":["KH","BH"],"offset":53.75,"lado":1,"tipo":"idoso","x":156.5,"y":58.75,"largura":2.5},{"id":"191","zona":"H","aresta":["KH","BH"],"offset":6.25,"lado":-1,"tipo":"comum","x":167.5,"y":11.25,"largura":2.5},{"id":"192","zona":"H","aresta":["KH","BH"],"offset":8.75,"lado":-1,"tipo":"comum","x":167.5,"y":13.75,"largura":2.5},{"id":"193","zona":"H","aresta":["KH","BH"],"offset":11.25,"lado":-1,"tipo":"comum","x":167.5,"y":16.25,"largura":2.5},{"id":"194","zona":"H","aresta":["KH","BH"],"offset":13.75,"lado":-1,"tipo":"comum","x":167.5,"y":18.75,"largura":2.5},{"id":"195","zona":"H","aresta":["KH","BH"],"offset":16.25,"lado":-1,"tipo":"comum","x":167.5,"y":21.25,"largura":2.5},{"id":"196","zona":"H","aresta":["KH","BH"],"offset":18.75,"lado":-1,"tipo":"comum","x":167.5,"y":23.75,"largura":2.5},{"id":"197","zona":"H","aresta":["KH","BH"],"offset":21.25,"lado":-1,"tipo":"comum","x":167.5,"y":26.25,"largura":2.5},{"id":"198","zona":"H","aresta":["KH","BH"],"offset":23.75,"lado":-1,"tipo":"comum","x":167.5,"y":28.75,"largura":2.5},{"id":"199","zona":"H","aresta":["KH","BH"],"offset":26.25,"lado":-1,"tipo":"comum","x":167.5,"y":31.25,"largura":2.5},{"id":"200","zona":"H","aresta":["KH","BH"],"offset":28.75,"lado":-1,"tipo":"comum","x":167.5,"y":33.75,"largura":2.5},{"id":"201","zona":"H","aresta":["KH","BH"],"offset":31.25,"lado":-1,"tipo":"comum","x":167.5,"y":36.25,"largura":2.5},{"id":"202","zona":"H","aresta":["KH","BH"],"offset":33.75,"lado":-1,"tipo":"comum","x":167.5,"y":38.75,"largura":2.5},{"id":"203","zona":"H","aresta":["KH","BH"],"offset":36.25,"lado":-1,"tipo":"comum","x":167.5,"y":41.25,"largura":2.5},{"id":"204","zona":"H","aresta":["KH","BH"],"offset":38.75,"lado":-1,"tipo":"comum","x":167.5,"y":43.75,"largura":2.5},{"id":"205","zona":"H","aresta":["KH","BH"],"offset":41.25,"lado":-1,"tipo":"comum","x":167.5,"y":46.25,"largura":2.5},{"id":"206","zona":"H","aresta":["KH","BH"],"offset":43.75,"lado":-1,"tipo":"comum","x":167.5,"y":48.75,"largura":2.5},{"id":"207","zona":"H","aresta":["KH","BH"],"offset":46.25,"lado":-1,"tipo":"comum","x":167.5,"y":51.25,"largura":2.5},{"id":"208","zona":"H","aresta":["KH","BH"],"offset":48.75,"lado":-1,"tipo":"comum","x":167.5,"y":53.75,"largura":2.5},{"id":"209","zona":"H","aresta":["KH","BH"],"offset":51.25,"lado":-1,"tipo":"comum","x":167.5,"y":56.25,"largura":2.5},{"id":"210","zona":"H","aresta":["KH","BH"],"offset":53.75,"lado":-1,"tipo":"comum","x":167.5,"y":58.75,"largura":2.5},{"id":"211","zona":"I","aresta":["KI","BI"],"offset":6.25,"lado":1,"tipo":"comum","x":174.5,"y":11.25,"largura":2.5},{"id":"212","zona":"I","aresta":["KI","BI"],"offset":8.75,"lado":1,"tipo":"comum","x":174.5,"y":13.75,"largura":2.5},{"id":"213","zona":"I","aresta":["KI","BI"],"offset":11.25,"lado":1,"tipo":"comum","x":174.5,"y":16.25,"largura":2.5},{"id":"214","zona":"I","aresta":["KI","BI"],"offset":13.75,"lado":1,"tipo":"comum","x":174.5,"y":18.75,"largura":2.5},{"id":"215","zona":"I","aresta":["KI","BI"],"offset":16.25,"lado":1,"tipo":"comum","x":174.5,"y":21.25,"largura":2.5},{"id":"216","zona":"I","aresta":["KI","BI"],"offset":18.75,"lado":1,"tipo":"comum","x":174.5,"y":23.75,"largura":2.5},{"id":"217","zona":"I","aresta":["KI","BI"],"offset":21.25,"lado":1,"tipo":"comum","x":174.5,"y":26.25,"largura":2.5},{"id":"218","zona":"I","aresta":["KI","BI"],"offset":23.75,"lado":1,"tipo":"comum","x":174.5,"y":28.75,"largura":2.5},{"id":"219","zona":"I","aresta":["KI","BI"],"offset":26.25,"lado":1,"tipo":"comum","x":174.5,"y":31.25,"largura":2.5},{"id":"220","zona":"I","aresta":["KI","BI"],"offset":28.75,"lado":1,"tipo":"comum","x":174.5,"y":33.75,"largura":2.5},{"id":"221","zona":"I","aresta":["KI","BI"],"offset":31.25,"lado":1,"tipo":"comum","x":174.5,"y":36.25,"largura":2.5},{"id":"222","zona":"I","aresta":["KI","BI"],"offset":33.75,"lado":1,"tipo":"comum","x":174.5,"y":38.75,"largura":2.5},{"id":"223","zona":"I","aresta":["KI","BI"],"offset":36.25,"lado":1,"tipo":"comum","x":174.5,"y":41.25,"largura":2.5},{"id":"224","zona":"I","aresta":["KI","BI"],"offset":38.75,"lado":1,"tipo":"comum","x":174.5,"y":43.75,"largura":2.5},{"id":"225","zona":"I","aresta":["KI","BI"],"offset":41.25,"lado":1,"tipo":"comum","x":174.5,"y":46.25,"largura":2.5},{"id":"226","zona":"I","aresta":["KI","BI"],"offset":43.75,"lado":1,"tipo":"comum","x":174.5,"y":48.75,"largura":2.5},{"id":"227","zona":"I","aresta":["KI","BI"],"offset":46.25,"lado":1,"tipo":"comum","x":174.5,"y":51.25,"largura":2.5},{"id":"228","zona":"I","aresta":["KI","BI"],"offset":48.75,"lado":1,"tipo":"comum","x":174.5,"y":53.75,"largura":2.5},{"id":"229","zona":"I","aresta":["KI","BI"],"offset":51.25,"lado":1,"tipo":"idoso","x":174.5,"y":56.25,"largura":2.5},{"id":"230","zona":"I","aresta":["KI","BI"],"offset":53.75,"lado":1,"tipo":"idoso","x":174.5,"y":58.75,"largura":2.5},{"id":"231","zona":"I","aresta":["KI","BI"],"offset":6.25,"lado":-1,"tipo":"comum","x":185.5,"y":11.25,"largura":2.5},{"id":"232","zona":"I","aresta":["KI","BI"],"offset":8.75,"lado":-1,"tipo":"comum","x":185.5,"y":13.75,"largura":2.5},{"id":"233","zona":"I","aresta":["KI","BI"],"offset":11.25,"lado":-1,"tipo":"comum","x":185.5,"y":16.25,"largura":2.5},{"id":"234","zona":"I","aresta":["KI","BI"],"offset":13.75,"lado":-1,"tipo":"comum","x":185.5,"y":18.75,"largura":2.5},{"id":"235","zona":"I","aresta":["KI","BI"],"offset":16.25,"lado":-1,"tipo":"comum","x":185.5,"y":21.25,"largura":2.5},{"id":"236","zona":"I","aresta":["KI","BI"],"offset":18.75,"lado":-1,"tipo":"comum","x":185.5,"y":23.75,"largura":2.5},{"id":"237","zona":"I","aresta":["KI","BI"],"offset":21.25,"lado":-1,"tipo":"comum","x":185.5,"y":26.25,"largura":2.5},{"id":"238","zona":"I","aresta":["KI","BI"],"offset":23.75,"lado":-1,"tipo":"comum","x":185.5,"y":28.75,"largura":2.5},{"id":"239","zona":"I","aresta":["KI","BI"],"offset":26.25,"lado":-1,"tipo":"comum","x":185.5,"y":31.25,"largura":2.5},{"id":"240","zona":"I","aresta":["KI","BI"],"offset":28.75,"lado":-1,"tipo":"comum","x":185.5,"y":33.75,"largura":2.5},{"id":"241","zona":"I","aresta":["KI","BI"],"offset":31.25,"lado":-1,"tipo":"comum","x":185.5,"y":36.25,"largura":2.5},{"id":"242","zona":"I","aresta":["KI","BI"],"offset":33.75,"lado":-1,"tipo":"comum","x":185.5,"y":38.75,"largura":2.5},{"id":"243","zona":"I","aresta":["KI","BI"],"offset":36.25,"lado":-1,"tipo":"comum","x":185.5,"y":41.25,"largura":2.5},{"id":"244","zona":"I","aresta":["KI","BI"],"offset":38.75,"lado":-1,"tipo":"comum","x":185.5,"y":43.75,"largura":2.5},{"id":"245","zona":"I","aresta":["KI","BI"],"offset":41.25,"lado":-1,"tipo":"comum","x":185.5,"y":46.25,"largura":2.5},{"id":"246","zona":"I","aresta":["KI","BI"],"offset":43.75,"lado":-1,"tipo":"comum","x":185.5,"y":48.75,"largura":2.5},{"id":"247","zona":"I","aresta":["KI","BI"],"offset":46.25,"lado":-1,"tipo":"comum","x":185.5,"y":51.25,"largura":2.5},{"id":"248","zona":"I","aresta":["KI","BI"],"offset":48.75,"lado":-1,"tipo":"comum","x":185.5,"y":53.75,"largura":2.5},{"id":"249","zona":"I","aresta":["KI","BI"],"offset":51.25,"lado":-1,"tipo":"comum","x":185.5,"y":56.25,"largura":2.5},{"id":"250","zona":"I","aresta":["KI","BI"],"offset":53.75,"lado":-1,"tipo":"comum","x":185.5,"y":58.75,"largura":2.5}],"decoracao":[{"tipo":"canteiro","x":0,"y":0,"w":200,"h":112},{"tipo":"calcada","x":0,"y":106,"w":200,"h":6},{"tipo":"calcada","x":2,"y":16,"w":52,"h":2.4},{"tipo":"calcada","x":2,"y":55,"w":9.2,"h":4},{"tipo":"canteiro","x":64,"y":9.5,"w":5,"h":26,"arvores":3},{"tipo":"canteiro","x":75,"y":9.5,"w":5,"h":28.5,"arvores":3},{"tipo":"canteiro","x":82,"y":9.5,"w":5,"h":26,"arvores":3},{"tipo":"canteiro","x":93,"y":9.5,"w":5,"h":28.5,"arvores":3},{"tipo":"canteiro","x":80,"y":9,"w":2,"h":53.5,"arvores":4},{"tipo":"canteiro","x":98,"y":9,"w":2,"h":53.5,"arvores":4},{"tipo":"canteiro","x":116,"y":9,"w":2,"h":53.5,"arvores":4},{"tipo":"canteiro","x":134,"y":9,"w":2,"h":53.5,"arvores":4},{"tipo":"canteiro","x":152,"y":9,"w":2,"h":53.5,"arvores":4},{"tipo":"canteiro","x":170,"y":9,"w":2,"h":53.5,"arvores":4},{"tipo":"canteiro","x":60,"y":70,"w":128,"h":30,"arvores":9},{"tipo":"canteiro","x":25,"y":70,"w":31,"h":30,"arvores":4},{"tipo":"predio","x":3,"y":2,"w":50,"h":14,"rotulo":"IGREJA","porta":[30,16]},{"tipo":"predio","x":2,"y":32,"w":9.2,"h":23,"rotulo":"RESTAURANTE"},{"tipo":"predio","x":29,"y":33,"w":19,"h":21,"rotulo":"LIVRARIA"},{"tipo":"guarita","x":25.5,"y":92,"w":3,"h":4},{"tipo":"guarita","x":196.2,"y":92,"w":3,"h":4},{"tipo":"cancela","x1":16.5,"y1":91,"x2":25.5,"y2":91},{"tipo":"cancela","x1":196.2,"y1":91,"x2":188.5,"y2":91},{"tipo":"faixa","x":16.5,"y":100.5,"w":7,"h":3},{"tipo":"faixa","x":188.5,"y":100.5,"w":7,"h":3},{"tipo":"rotulo","x":20,"y":110,"texto":"ENTRADA"},{"tipo":"rotulo","x":192,"y":110,"texto":"SAÍDA"},{"tipo":"rotulo","x":38,"y":30.2,"texto":"CIRCULAÇÃO","pequeno":true},{"tipo":"rotulo","x":124,"y":69.2,"texto":"CIRCULAÇÃO","pequeno":true},{"tipo":"seta","x":20,"y":84,"ang":-90},{"tipo":"seta","x":20,"y":45,"ang":-90},{"tipo":"seta","x":30,"y":28,"ang":0},{"tipo":"seta","x":46,"y":28,"ang":0},{"tipo":"seta","x":56,"y":16,"ang":-90},{"tipo":"seta","x":90,"y":66,"ang":0},{"tipo":"seta","x":150,"y":66,"ang":0},{"tipo":"seta","x":192,"y":80,"ang":90},{"tipo":"seta","x":130,"y":5,"ang":0}],"roteiro_busca":[["E0","N1"],["N1","N0"],["N0","T0"],["T0","K0"],["K0","KC"],["KC","BC"],["BC","BD"],["BD","KD"],["KD","KE"],["KE","BE"],["BE","BF"],["BF","KF"],["KF","KG"],["KG","BG"],["BG","BH"],["BH","KH"],["KH","KI"],["KI","BI"]],"limites":[0.0,0.0,200.0,112.0],"tempo_cancela":3.5,"penalidade_equipe":{"A":400.0,"B":400.0,"C":300.0,"D":240.0,"E":180.0,"F":120.0,"G":60.0},"penalidade_membro":{"C":45.0}},"perfil":{"0":{"-50":0.31,"-49":0.58,"-48":0.77,"-47":0.92,"-46":1.04,"-45":1.19,"-44":1.23,"-43":1.15,"-42":1.19,"-41":1.15,"-40":1.12,"-39":0.92,"-38":0.92,"-37":0.69,"-36":0.5,"-35":0.42,"-34":0.31,"-33":0.23,"-32":0.23,"-31":0.31,"-30":0.54,"-29":0.69,"-28":0.92,"-27":1.31,"-26":1.5,"-25":1.54,"-24":1.96,"-23":2.58,"-22":2.85,"-21":3.42,"-20":4.38,"-19":4.92,"-18":5.35,"-17":6.08,"-16":6.42,"-15":6.54,"-14":7.0,"-13":7.04,"-12":7.5,"-11":7.73,"-10":7.77,"-9":7.23,"-8":7.12,"-7":6.23,"-6":5.88,"-5":5.15,"-4":4.88,"-3":4.35,"-2":4.35,"-1":3.85,"0":3.73,"1":3.46,"2":2.92,"3":2.38,"4":2.12,"5":1.77,"6":1.42,"7":1.27,"8":1.19,"9":1.19,"10":1.04,"11":0.85,"12":0.81,"13":0.46,"14":0.15,"15":0.04},"1":{"-50":0.5,"-49":0.58,"-48":0.96,"-47":1.04,"-46":1.08,"-45":1.23,"-44":1.42,"-43":1.38,"-42":1.35,"-41":1.35,"-40":1.15,"-39":1.04,"-38":0.96,"-37":0.96,"-36":1.12,"-35":1.19,"-34":1.19,"-33":1.04,"-32":1.15,"-31":1.27,"-30":1.65,"-29":1.96,"-28":2.42,"-27":3.19,"-26":3.38,"-25":3.96,"-24":4.65,"-23":5.54,"-22":5.77,"-21":6.96,"-20":7.54,"-19":8.15,"-18":8.65,"-17":9.65,"-16":10.27,"-15":10.58,"-14":10.12,"-13":9.81,"-12":9.04,"-11":8.15,"-10":6.96,"-9":6.5,"-8":5.58,"-7":4.81,"-6":4.23,"-5":4.15,"-4":4.15,"-3":3.92,"-2":3.88,"-1":3.23,"0":2.92,"1":2.42,"2":2.31,"3":2.08,"4":2.04,"5":1.88,"6":1.69,"7":1.69,"8":1.5,"9":1.38,"10":1.38,"11":1.15,"12":0.77,"13":0.5,"14":0.27,"15":0.0},"2":{"-50":0.23,"-49":0.38,"-48":0.46,"-47":0.46,"-46":0.65,"-45":0.81,"-44":0.85,"-43":0.88,"-42":0.92,"-41":1.04,"-40":1.04,"-39":1.12,"-38":1.19,"-37":1.15,"-36":0.88,"-35":0.85,"-34":0.65,"-33":0.46,"-32":0.5,"-31":0.58,"-30":0.5,"-29":0.62,"-28":0.62,"-27":0.81,"-26":1.08,"-25":1.54,"-24":2.15,"-23":2.62,"-22":3.27,"-21":3.62,"-20":4.23,"-19":4.81,"-18":5.15,"-17":5.81,"-16":6.73,"-15":7.0,"-14":6.88,"-13":7.5,"-12":7.38,"-11":7.77,"-10":8.0,"-9":8.15,"-8":8.27,"-7":8.15,"-6":6.85,"-5":6.04,"-4":5.96,"-3":5.58,"-2":5.54,"-1":5.88,"0":5.46,"1":4.85,"2":4.42,"3":3.73,"4":3.15,"5":3.19,"6":2.96,"7":2.62,"8":2.46,"9":2.15,"10":2.04,"11":1.54,"12":1.08,"13":0.62,"14":0.42,"15":0.0},"3":{"-50":0.5,"-49":0.54,"-48":0.54,"-47":0.77,"-46":0.81,"-45":0.92,"-44":1.04,"-43":1.08,"-42":0.96,"-41":1.0,"-40":1.0,"-39":0.73,"-38":0.81,"-37":0.69,"-36":0.54,"-35":0.27,"-34":0.31,"-33":0.15,"-32":0.23,"-31":0.27,"-30":0.35,"-29":0.31,"-28":0.5,"-27":0.5,"-26":0.5,"-25":0.65,"-24":1.04,"-23":1.23,"-22":1.96,"-21":2.5,"-20":2.73,"-19":2.96,"-18":3.73,"-17":4.04,"-16":4.96,"-15":6.19,"-14":7.12,"-13":7.65,"-12":8.23,"-11":8.81,"-10":9.12,"-9":9.35,"-8":9.69,"-7":10.08,"-6":9.42,"-5":8.92,"-4":8.73,"-3":8.38,"-2":7.65,"-1":7.19,"0":7.0,"1":6.19,"2":5.38,"3":4.69,"4":4.23,"5":3.73,"6":3.92,"7":3.85,"8":3.62,"9":3.96,"10":3.65,"11":2.69,"12":1.85,"13":1.38,"14":0.5,"15":0.0}},"resultados":{"Domingo 8h30":{"sem_sistema":{"porta_a_porta_medio_s":88.9,"tempo_parado_medio_s":5.8,"tempo_p95_s":86.3},"mais_proxima":{"porta_a_porta_medio_s":84.2,"tempo_parado_medio_s":3.3,"tempo_p95_s":63.4},"reativa":{"porta_a_porta_medio_s":82.7,"tempo_parado_medio_s":1.0,"tempo_p95_s":57.3},"preditiva":{"porta_a_porta_medio_s":83.2,"tempo_parado_medio_s":0.8,"tempo_p95_s":57.4}},"Domingo 11h":{"sem_sistema":{"porta_a_porta_medio_s":110.6,"tempo_parado_medio_s":12.6,"tempo_p95_s":114.6},"mais_proxima":{"porta_a_porta_medio_s":90.5,"tempo_parado_medio_s":3.6,"tempo_p95_s":68.6},"reativa":{"porta_a_porta_medio_s":88.7,"tempo_parado_medio_s":1.4,"tempo_p95_s":62.0},"preditiva":{"porta_a_porta_medio_s":88.3,"tempo_parado_medio_s":0.9,"tempo_p95_s":61.0}},"Domingo 17h":{"sem_sistema":{"porta_a_porta_medio_s":100.5,"tempo_parado_medio_s":7.4,"tempo_p95_s":97.2},"mais_proxima":{"porta_a_porta_medio_s":88.5,"tempo_parado_medio_s":3.3,"tempo_p95_s":67.5},"reativa":{"porta_a_porta_medio_s":86.8,"tempo_parado_medio_s":0.9,"tempo_p95_s":59.4},"preditiva":{"porta_a_porta_medio_s":86.7,"tempo_parado_medio_s":0.5,"tempo_p95_s":58.4}},"Domingo 19h30":{"sem_sistema":{"porta_a_porta_medio_s":117.2,"tempo_parado_medio_s":14.3,"tempo_p95_s":122.5},"mais_proxima":{"porta_a_porta_medio_s":94.6,"tempo_parado_medio_s":5.3,"tempo_p95_s":74.3},"reativa":{"porta_a_porta_medio_s":90.8,"tempo_parado_medio_s":1.5,"tempo_p95_s":62.0},"preditiva":{"porta_a_porta_medio_s":90.8,"tempo_parado_medio_s":1.1,"tempo_p95_s":61.8}},"Evento especial (estresse)":{"sem_sistema":{"porta_a_porta_medio_s":192.5,"tempo_parado_medio_s":83.2,"tempo_p95_s":303.3},"mais_proxima":{"porta_a_porta_medio_s":112.7,"tempo_parado_medio_s":22.8,"tempo_p95_s":128.3},"reativa":{"porta_a_porta_medio_s":94.2,"tempo_parado_medio_s":4.4,"tempo_p95_s":72.1},"preditiva":{"porta_a_porta_medio_s":93.7,"tempo_parado_medio_s":3.8,"tempo_p95_s":69.5}}},"cultos":[{"nome":"Domingo 8h30","volume":34,"pico":-10,"disp":7,"atras":0.12,"mix":{"MEMBRO":0.64,"IDOSO":0.16,"PCD":0.03,"EQUIPE":0.08,"VISITANTE":0.09}},{"nome":"Domingo 11h","volume":46,"pico":-12,"disp":7,"atras":0.1,"mix":{"MEMBRO":0.66,"IDOSO":0.11,"PCD":0.03,"EQUIPE":0.07,"VISITANTE":0.13}},{"nome":"Domingo 17h","volume":38,"pico":-8,"disp":7,"atras":0.15,"mix":{"MEMBRO":0.7,"IDOSO":0.09,"PCD":0.03,"EQUIPE":0.07,"VISITANTE":0.11}},{"nome":"Domingo 19h30","volume":45,"pico":-6,"disp":6,"atras":0.18,"mix":{"MEMBRO":0.72,"IDOSO":0.05,"PCD":0.02,"EQUIPE":0.07,"VISITANTE":0.14}}]};
+
+// ===================================================================== aleatoriedade
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+class RNG {
+  constructor(s) { this.r = mulberry32(s); }
+  random() { return this.r(); }
+  uniform(a, b) { return a + (b - a) * this.r(); }
+  gauss(m, s) { let u = 0; while (u === 0) u = this.r(); return m + s * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * this.r()); }
+  choices(items, w) { let x = this.r() * w.reduce((a, b) => a + b, 0); for (let i = 0; i < items.length; i++) { x -= w[i]; if (x <= 0) return items[i]; } return items[items.length - 1]; }
+}
+const LETRAS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const placa = r => [0, 1, 2].map(() => LETRAS[Math.floor(r.random() * 26)]).join('') + Math.floor(r.random() * 10) + LETRAS[Math.floor(r.random() * 26)] + String(Math.floor(r.random() * 100)).padStart(2, '0');
+
+// ===================================================================== cenários e chegadas
+const ESCALA = D.layout.vagas.length / 48;   // perfis medidos para 48 vagas; a planta tem 250
+const CENARIOS = D.cultos.map((c, i) => ({ ...c, volume: c.volume * ESCALA, idx: i }));
+CENARIOS.push({ nome: 'Evento especial (estresse)', volume: 47 * ESCALA, pico: -8, disp: 3, atras: .05, mix: D.cultos[0].mix, idx: 0 });
+
+function gerarChegadas(c, r) {
+  const fv = Math.exp(r.gauss(0, .18)), desl = r.gauss(0, 3);
+  const n = Math.max(5, Math.round(r.gauss(c.volume * fv, c.volume * .05)));
+  const cats = Object.keys(c.mix), pesos = cats.map(k => c.mix[k]);
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const cat = r.choices(cats, pesos);
+    let t = cat === 'EQUIPE' ? r.gauss(-40, 5) : (r.random() < c.atras ? r.uniform(0, 15) : r.gauss(c.pico + desl, c.disp));
+    t = Math.min(Math.max(t, -50), 19);
+    out.push({ t, placa: placa(r), cat });
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+
+// ===================================================================== grafo
+const LAY = D.layout;
+const NOS = Object.fromEntries(LAY.nos.map(n => [n.id, n]));
+const ADJ = {}; LAY.nos.forEach(n => ADJ[n.id] = []);
+const AR = {}, COMP = {}, TIPO = {}, ZONA_AR = {};
+for (const e of LAY.arestas) {
+  ADJ[e.a].push(e.b); ADJ[e.b].push(e.a);
+  for (const k of [e.a + '|' + e.b, e.b + '|' + e.a]) { AR[k] = e; COMP[k] = e.comprimento; TIPO[k] = e.tipo; ZONA_AR[k] = e.zona; }
+}
+const VAGAS = LAY.vagas, VG = Object.fromEntries(VAGAS.map(v => [v.id, v]));
+const ZONAS = [...new Set(VAGAS.map(v => v.zona))];
+const caminhada = v => Math.hypot(v.x - LAY.porta[0], v.y - LAY.porta[1]);
+const chave = (a, b) => a < b ? a + '|' + b : b + '|' + a;
+const nomeNo = id => NOS[id].nome || id;
+const ARTIGO = n => ['esquina', 'via', 'guarita', 'saída', 'entrada'].includes(n.split(' ')[0]) ? 'Na' : 'No';
+
+const V_VIA = 4, V_COR = 2.5, DENS = 1 / 7, MANOBRA = 18, V_CAM = 1.2, DT = .5, GAP = 7, V_BUSCA = 1.8, T_CANCELA = LAY.tempo_cancela || 6;
+const ENTRADA_AR = LAY.entrada + '|' + ADJ[LAY.entrada][0];
+
+function aEstrela(origem, destino, custo, vmax) {
+  const alvo = NOS[destino], h = n => Math.hypot(NOS[n].x - alvo.x, NOS[n].y - alvo.y) / vmax;
+  const g = { [origem]: 0 }, pai = {}, aberto = [[h(origem), 0, origem]];
+  while (aberto.length) {
+    aberto.sort((a, b) => a[0] - b[0]);
+    const [, gn, n] = aberto.shift();
+    if (n === destino) { const cam = [n]; let x = n; while (pai[x]) { x = pai[x]; cam.push(x); } return [gn, cam.reverse()]; }
+    if (gn > (g[n] ?? Infinity)) continue;
+    for (const v of ADJ[n]) { const ng = gn + custo(n, v); if (ng < (g[v] ?? Infinity)) { g[v] = ng; pai[v] = n; aberto.push([ng + h(v), ng, v]); } }
+  }
+  return [Infinity, []];
+}
+
+function rotaAteVaga(v, custo, parcial, vmax) {
+  const [a, b] = v.aresta, L = COMP[a + '|' + b];
+  let melhor = null;
+  for (const [ent, sai, off] of [[a, b, v.offset], [b, a, L - v.offset]]) {
+    let [c, cam] = aEstrela(LAY.entrada, ent, custo, vmax);
+    if (!cam.length || cam.includes(sai)) continue;
+    c += parcial(ent, sai, off);
+    const arestas = cam.slice(0, -1).map((n, i) => [n, cam[i + 1]]).concat([[ent, sai]]);
+    if (!melhor || c < melhor[0]) melhor = [c, arestas, off];
+  }
+  return melhor || [Infinity, [], 0];
+}
+
+function instrucoes(arestas, vaga) {
+  const out = [];
+  for (let i = 0; i < arestas.length - 1; i++) {
+    const [a, b] = arestas[i], [, c] = arestas[i + 1];
+    const na = NOS[a], nb = NOS[b], nc = NOS[c];
+    const cruz = (nb.x - na.x) * (nc.y - nb.y) - (nb.y - na.y) * (nc.x - nb.x);
+    if (Math.abs(cruz) > 1e-6) out.push(`${ARTIGO(nomeNo(b))} ${nomeNo(b)}, vire à ${cruz < 0 ? 'esquerda' : 'direita'}`);
+  }
+  if (!out.length) out.push('Siga em frente');
+  const v = VG[vaga], [ua, ub] = arestas[arestas.length - 1];
+  const mesmo = ua === v.aresta[0] && ub === v.aresta[1];
+  out.push(`Vaga ${vaga} à ${(v.lado > 0) === mesmo ? 'direita' : 'esquerda'}`);
+  return out;
+}
+function pontosRota(arestas, off, vaga) {
+  const pts = [[NOS[arestas[0][0]].x, NOS[arestas[0][0]].y]];
+  for (const [, b] of arestas.slice(0, -1)) pts.push([NOS[b].x, NOS[b].y]);
+  const [a, b] = arestas[arestas.length - 1], L = COMP[a + '|' + b], f = L ? off / L : 0;
+  pts.push([NOS[a].x + (NOS[b].x - NOS[a].x) * f, NOS[a].y + (NOS[b].y - NOS[a].y) * f], [VG[vaga].x, VG[vaga].y]);
+  return pts;
+}
+const setaDe = instr => { for (const i of instr) { if (i.includes('esquerda')) return 'ESQUERDA'; if (i.includes('direita')) return 'DIREITA'; } return 'FRENTE'; };
+
+// ===================================================================== alocador (igual a smartpark/alocador.py)
+function decidir(estrategia, cat, est) {
+  const livres = VAGAS.filter(v => est.livres.has(v.id));
+  const com = livres.filter(v => v.tipo === 'comum');
+  let cand = com;
+  if (cat === 'IDOSO' || cat === 'PCD') {
+    const propria = cat === 'IDOSO' ? 'idoso' : 'pcd', outra = propria === 'idoso' ? 'pcd' : 'idoso';
+    const p1 = livres.filter(v => v.tipo === propria), p2 = livres.filter(v => v.tipo === outra);
+    cand = p1.length ? p1 : p2.length ? p2 : com;
+  }
+  if (!cand.length) return null;
+  const w = estrategia === 'reativa' ? 1 : estrategia === 'preditiva' ? Math.min(4, .4 + (est.prev || 0) / 4) : 0;
+  const carga = {}, resCor = {};
+  for (const r of est.transito) {
+    for (const [a, b] of r.arestas) { const k = chave(a, b); carga[k] = (carga[k] || 0) + 1; }
+    const v = VG[r.vaga]; (resCor[chave(...v.aresta)] ||= []).push([v, r.arestas[r.arestas.length - 1]]);
+  }
+  const estatico = estrategia === 'mais_proxima';
+  const tgs = (a, b, L, n) => { const vm = TIPO[a + '|' + b] === 'corredor' ? V_COR : V_VIA; const v = Math.max(.15 * vm, vm * (1 - (n / Math.max(L, 1)) / DENS)); return [L / v, L / vm]; };
+  const custo = (a, b) => { const L = COMP[a + '|' + b]; if (estatico) return L; const [tc, tl] = tgs(a, b, L, carga[chave(a, b)] || 0); return tl + w * (tc - tl); };
+  const parcial = (a, b, off) => {
+    if (estatico) return off;
+    const L = COMP[a + '|' + b]; const [tc, tl] = tgs(a, b, off, carga[chave(a, b)] || 0);
+    let bloq = 0;
+    for (const [o, ult] of (resCor[chave(a, b)] || [])) { const offO = ult[0] === o.aresta[0] ? o.offset : L - o.offset; if (ult[0] === a && ult[1] === b && offO < off) bloq++; }
+    return tl + w * ((tc - tl) + bloq * MANOBRA * .5);
+  };
+  let best = null;
+  for (const v of cand) {
+    let [c, arestas, off] = rotaAteVaga(v, custo, parcial, estatico ? 1 : V_VIA);
+    if (!estatico) c += (cat === 'IDOSO' || cat === 'PCD') ? 1.0 * caminhada(v) / 0.8 : .3 * caminhada(v) / V_CAM;   // igual ao alocador.py
+    // ordem de proximidade: PcD, idosos e visitantes > membros > equipe e voluntários
+    const tabela = cat === 'EQUIPE' ? (LAY.penalidade_equipe || { A: 300, B: 120 }) : cat === 'MEMBRO' ? (LAY.penalidade_membro || { A: 45 }) : {};
+    const pen = tabela[v.zona] || 0; if (pen) c += estatico ? pen * 4.0 : pen;   // metros = segundos × 4 m/s
+    if (!best || c < best.c) best = { vaga: v.id, arestas, off, c };
+  }
+  return best;
+}
+
+// ===================================================================== motor (igual a simulador/motor.py)
+const ROTEIRO_BUSCA = (LAY.roteiro_busca || []).map(e => e.join('|'));
+const PERFIL = D.perfil;
+
+class Sim {
+  constructor(chegadas, estrategia, cultoIdx, seed) {
+    this.est = estrategia; this.culto = cultoIdx; this.rng = new RNG(seed * 7919 + 13);
+    this.carros = chegadas.map((c, i) => ({ id: i, ch: c, tc: c.t * 60, estado: 'fila', rota: [], i: 0, pos: 0, alvo: null, vaga: null, busca: false, tfm: 0, tsc: null, test: null, cat: null, parado: 0, freando: false, naFila: false }));
+    this.t = Math.min(...this.carros.map(c => c.tc)) - 1;
+    this.ocup = {}; VAGAS.forEach(v => this.ocup[v.id] = false);
+    this.reservada = {}; this.reservas = new Map(); this.fila = []; this.atend = null; this.tfa = 0;
+    this.entradas = []; this.maxFila = 0; this.prev = null; this.tPrev = -1e9; this.ultimo = null; this.fim = false;
+  }
+  naAresta(k) { return this.carros.filter(c => (c.estado === 'movendo' || c.estado === 'manobrando') && c.rota[c.i] === k); }
+  bloqRev(k) { const [a, b] = k.split('|'), rev = b + '|' + a, L = COMP[k]; return this.carros.filter(c => c.estado === 'manobrando' && c.rota[c.i] === rev).map(c => L - c.pos); }
+  prever() {
+    const t = this.t / 60, p = PERFIL[this.culto] || {}, f = m => ESCALA * (p[Math.round(m)] || 0);
+    const obs = this.entradas.filter(x => x > t - 10 && x <= t).length, esp = f(t - 10) + f(t - 5);
+    return f(t) * Math.min(2, Math.max(.5, (obs + 1) / (esp + 1)));
+  }
+  lerPlaca(c) {  // simulo 4% de placas ilegíveis + 3% com caractere trocado => viram visitante
+    return this.rng.random() < .07 ? 'VISITANTE' : c.ch.cat;
+  }
+  atender(c) {
+    const cat = this.lerPlaca(c); c.cat = cat;
+    if (this.est === 'sem_sistema') {
+      c.busca = true; c.rota = ROTEIRO_BUSCA.slice();
+      this.ultimo = { placa: c.ch.placa, cat, vaga: '?', seta: 'FRENTE', instr: ['Sem orientação: procure vaga pela via da igreja e pelos corredores'], msg: 'O motorista procura sozinho.' };
+      return true;
+    }
+    if (this.est === 'preditiva' && this.t - this.tPrev >= 30) { this.prev = this.prever(); this.tPrev = this.t; }
+    const livres = new Set(VAGAS.filter(v => !this.ocup[v.id] && !(v.id in this.reservada)).map(v => v.id));
+    const dec = decidir(this.est, cat, { livres, transito: [...this.reservas.values()], prev: this.est === 'preditiva' ? this.prev : null });
+    if (!dec) { c.estado = 'rejeitado'; this.ultimo = { placa: c.ch.placa, cat, vaga: '--', seta: 'PARE', instr: [], msg: 'Estacionamento lotado. Procure a recepção.' }; return false; }
+    c.vaga = dec.vaga; c.rota = dec.arestas.map(([a, b]) => a + '|' + b); c.alvo = dec.off;
+    this.reservada[dec.vaga] = c.id; this.reservas.set(c.id, { vaga: dec.vaga, arestas: dec.arestas });
+    const instr = instrucoes(dec.arestas, dec.vaga);
+    this.ultimo = { placa: c.ch.placa, cat, vaga: dec.vaga, seta: setaDe(instr), instr, msg: cat === 'VISITANTE' ? 'Seja bem-vindo, visitante!' : 'Bom culto!',
+      pontos: pontosRota(dec.arestas, dec.off, dec.vaga), carro: c.id };
+    return true;
+  }
+  cancela() {
+    for (const c of this.carros) if (c.estado === 'fila' && c.tc <= this.t && !c.naFila) { c.naFila = true; this.fila.push(c); this.entradas.push(c.tc / 60); }
+    this.maxFila = Math.max(this.maxFila, this.fila.length);
+    if (this.atend && this.t >= this.tfa) {
+      const c = this.atend;
+      if (this.naAresta(ENTRADA_AR).every(o => o.pos >= GAP)) { if (this.atender(c)) { c.estado = 'movendo'; c.i = 0; c.pos = 0; c.tsc = this.t; } this.atend = null; }
+    }
+    if (!this.atend && this.fila.length) { this.atend = this.fila.shift(); this.atend.estado = 'atendimento'; this.tfa = this.t + T_CANCELA; }
+  }
+  vmax(c, k) { return TIPO[k] === 'corredor' ? (c.busca ? V_BUSCA : V_COR) : V_VIA; }
+  procurar(c, k, de, ate) {
+    const [a, b] = k.split('|'), L = COMP[k]; let melhor = null;
+    for (const v of VAGAS) {
+      let off;
+      if (v.aresta[0] === a && v.aresta[1] === b) off = v.offset; else if (v.aresta[0] === b && v.aresta[1] === a) off = L - v.offset; else continue;
+      if (off >= de - .01 && off <= ate + 2.6 && !this.ocup[v.id] && !(v.id in this.reservada)) {
+        if (v.tipo !== 'comum' && !(c.ch.cat === 'IDOSO' || c.ch.cat === 'PCD')) continue;
+        if (!melhor || off < melhor[0]) melhor = [off, v.id];
+      }
+    }
+    if (!melhor) return null;
+    c.vaga = melhor[1]; this.reservada[melhor[1]] = c.id; return melhor[0];
+  }
+  mover() {
+    const por = {};
+    for (const c of this.carros) if (c.estado === 'movendo' || c.estado === 'manobrando') (por[c.rota[c.i]] ||= []).push(c);
+    for (const c of this.carros) if (c.estado === 'manobrando' && this.t >= c.tfm) {
+      c.estado = 'estacionado'; c.test = this.t; this.ocup[c.vaga] = true; delete this.reservada[c.vaga]; this.reservas.delete(c.id);
+      const l = por[c.rota[c.i]]; l.splice(l.indexOf(c), 1);
+    }
+    const entrou = new Set();
+    for (const [k, lista] of Object.entries(por)) {
+      const L = COMP[k], bloq = this.bloqRev(k);
+      lista.sort((a, b) => b.pos - a.pos);
+      let lider = null;
+      for (const c of lista) {
+        if (c.estado === 'manobrando') { lider = c.pos; continue; }
+        const antes = c.pos; let des = c.pos + this.vmax(c, k) * DT;
+        if (lider !== null) des = Math.min(des, lider - GAP);
+        for (const b of bloq) if (b > c.pos) des = Math.min(des, b - GAP / 2);
+        const ultima = c.i === c.rota.length - 1;
+        if ((ultima || c.busca) && c.alvo !== null) des = Math.min(des, c.alvo);
+        des = Math.max(des, c.pos);
+        if (c.busca && c.vaga === null && TIPO[k] === 'corredor') { const a = this.procurar(c, k, antes, des); if (a !== null) { c.alvo = a; des = Math.min(des, a); } }
+        c.pos = Math.min(des, L);
+        c.freando = c.pos - antes < .05; if (c.freando) c.parado += DT;
+        if (c.alvo !== null && (ultima || c.busca) && Math.abs(c.pos - c.alvo) < .05) { c.estado = 'manobrando'; c.tfm = this.t + this.rng.uniform(12, 24); lider = c.pos; continue; }
+        if (c.pos >= L - 1e-6) {
+          if (ultima) { c.estado = 'desistiu'; if (c.vaga) delete this.reservada[c.vaga]; this.reservas.delete(c.id); continue; }
+          const prox = c.rota[c.i + 1];
+          if (!entrou.has(prox) && this.naAresta(prox).filter(o => o !== c).every(o => o.pos >= GAP) && this.bloqRev(prox).every(b => b >= GAP)) { entrou.add(prox); c.i++; c.pos = 0; continue; }
+        }
+        lider = c.pos;
+      }
+    }
+  }
+  passo() {
+    if (this.fim) return;
+    this.cancela(); this.mover();
+    if (this.t > 25 * 60 || this.carros.every(c => ['estacionado', 'rejeitado', 'desistiu'].includes(c.estado))) this.fim = true;
+    this.t += DT;
+  }
+  metricas() {
+    const est = this.carros.filter(c => c.estado === 'estacionado');
+    const media = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
+    const tot = est.map(c => c.test - c.tc), ord = tot.slice().sort((a, b) => a - b);
+    return {
+      estacionados: est.length, total: this.carros.length,
+      interno: media(est.map(c => c.test - c.tsc)), parado: media(est.map(c => c.parado)),
+      p95: ord.length ? ord[Math.floor(.95 * (ord.length - 1))] : 0,
+      portaAPorta: media(est.map(c => c.test - c.tc + caminhada(VG[c.vaga]) / V_CAM)),
+    };
+  }
+}
+
+// ===================================================================== interface
+const ESTRATEGIAS = [['sem_sistema', 'Sem sistema', '--s1'], ['mais_proxima', 'Mais próxima', '--s2'], ['reativa', 'Reativa', '--s3'], ['preditiva', 'Preditiva (IA)', '--s4']];
+const VELOCIDADES = [[1, '1×'], [5, '5×'], [20, '20×'], [60, '60×']];
+const estado = { cenario: 1, estrategia: 'preditiva', vel: 20, rodando: !matchMedia('(prefers-reduced-motion: reduce)').matches, semente: 1 };
+let sim;
+
+const $ = id => document.getElementById(id);
+$('cenario').innerHTML = CENARIOS.map((c, i) => `<option value="${i}">${c.nome}</option>`).join('');
+$('cenario').value = estado.cenario;
+function segmentos(el, itens, chaveEstado, aoMudar) {
+  el.innerHTML = itens.map(([v, r, cor]) => `<button type="button" data-v="${v}" aria-pressed="${String(estado[chaveEstado]) === String(v)}">${cor ? `<i style="background:var(${cor})"></i>` : ''}${r}</button>`).join('');
+  el.onclick = e => { const b = e.target.closest('button'); if (!b) return; estado[chaveEstado] = isNaN(+b.dataset.v) ? b.dataset.v : +b.dataset.v; [...el.children].forEach(x => x.setAttribute('aria-pressed', x === b)); aoMudar && aoMudar(); };
+}
+segmentos($('estrategias'), ESTRATEGIAS, 'estrategia', reiniciar);
+segmentos($('velocidades'), VELOCIDADES, 'vel');
+$('cenario').onchange = e => { estado.cenario = +e.target.value; reiniciar(); };
+$('play').onclick = () => { estado.rodando = !estado.rodando; $('play').textContent = estado.rodando ? 'Pausar' : 'Continuar'; };
+$('reiniciar').onclick = () => { estado.semente++; reiniciar(); };
+$('play').textContent = estado.rodando ? 'Pausar' : 'Continuar';
+
+function reiniciar() {
+  const c = CENARIOS[estado.cenario];
+  sim = new Sim(gerarChegadas(c, new RNG(1000 + estado.semente * 31 + estado.cenario)), estado.estrategia, c.idx, estado.semente);
+  // começa um pouco antes da primeira chegada dos voluntários
+  for (let i = 0; i < 40; i++) sim.passo();
+  atualizarPainel(true);
+}
+
+// ------------------------------------------------------------------ desenho
+// Fundo: a planta em SVG (o mesmo desenho das outras telas). Por cima: um canvas com os carros andando.
+const cv = $('tela'), ctx = cv.getContext('2d');
+const [MX0, MY0, MX1, MY1] = LAY.limites;
+$('mapa-wrap').style.aspectRatio = `${MX1 - MX0} / ${MY1 - MY0}`;
+const planta = SmartPlanta.criar($('planta'), LAY);
+let cores = {};
+function lerCores() { const s = getComputedStyle(document.documentElement); for (const k of ['c-geral', 'c-prio', 'c-equipe', 'c-visit', 'freio', 'faixa']) cores[k] = s.getPropertyValue('--' + k).trim(); }
+lerCores();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', lerCores);
+new MutationObserver(lerCores).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+let dpr = 1;
+function ajustarCanvas() {
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = Math.round(cv.clientWidth * dpr); cv.height = Math.round(cv.clientHeight * dpr);
+}
+addEventListener('resize', ajustarCanvas);
+
+function corCat(cat) { return cat === 'IDOSO' || cat === 'PCD' ? cores['c-prio'] : cat === 'EQUIPE' ? cores['c-equipe'] : cat === 'VISITANTE' ? cores['c-visit'] : cores['c-geral']; }
+
+function carro(x, y, ang, cor, freio, alerta, comp = 4.2) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
+  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.roundRect(-comp / 2 + .15, -.9 + .2, comp, 1.8, .5); ctx.fill();
+  ctx.fillStyle = cor; ctx.beginPath(); ctx.roundRect(-comp / 2, -.9, comp, 1.8, .5); ctx.fill();
+  ctx.fillStyle = 'rgba(20,24,28,.6)'; ctx.fillRect(comp * .08, -.72, comp * .2, 1.44);
+  if (freio) { ctx.fillStyle = cores.freio; ctx.fillRect(-comp / 2 - .1, -.85, .45, .5); ctx.fillRect(-comp / 2 - .1, .35, .45, .5); }
+  if (alerta) { ctx.fillStyle = cores.faixa; for (const sx of [-1, 1]) for (const sy of [-1, 1]) { ctx.beginPath(); ctx.arc(sx * comp / 2, sy * .8, .4, 0, 7); ctx.fill(); } }
+  ctx.restore();
+}
+
+let assinaturaEstado = '', rotaMostrada = null;
+function desenhar() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height);
+  if (!sim) return;
+  // vagas: ocupada / reservada (só redesenha quando muda)
+  const mapa = {};
+  for (const v of VAGAS) mapa[v.id] = sim.ocup[v.id] ? 'ocupada' : (v.id in sim.reservada ? 'reservada' : 'livre');
+  const assin = Object.values(mapa).join('');
+  if (assin !== assinaturaEstado) { assinaturaEstado = assin; planta.estados(mapa); }
+  // rota do último carro orientado, enquanto ele não estaciona
+  const u = sim.ultimo, alvo = u && u.pontos && sim.carros[u.carro] && sim.carros[u.carro].estado === 'movendo' ? u : null;
+  if ((alvo && alvo.carro) !== rotaMostrada) { rotaMostrada = alvo && alvo.carro; planta.rota(alvo ? alvo.pontos : [], alvo ? alvo.vaga : null); }
+  // carros em movimento e fila na cancela
+  const [ox, oy, esc] = planta.paraTela(MX0, MY0);
+  ctx.setTransform(esc * dpr, 0, 0, esc * dpr, (ox - MX0 * esc) * dpr, (oy - MY0 * esc) * dpr);
+  const g = NOS[LAY.entrada], [, prox] = ENTRADA_AR.split('|'), dirY = Math.sign(NOS[prox].y - g.y) || -1;
+  const naFila = [sim.atend, ...sim.fila].filter(Boolean);
+  naFila.slice(0, 12).forEach((c, i) => carro(g.x + 1.15, g.y - dirY * (2 + i * 5.5), Math.atan2(dirY, 0), corCat(c.cat || c.ch.cat), i > 0, false));
+  for (const c of sim.carros) {
+    if (c.estado !== 'movendo' && c.estado !== 'manobrando') continue;
+    const [ia, ib] = c.rota[c.i].split('|'), a = NOS[ia], b = NOS[ib], L = COMP[c.rota[c.i]], f = c.pos / L;
+    const dx = (b.x - a.x) / L, dy = (b.y - a.y) / L;
+    const x = a.x + (b.x - a.x) * f - dy * 1.6, y = a.y + (b.y - a.y) * f + dx * 1.6;
+    const pisca = c.estado === 'manobrando' && Math.floor(performance.now() / 350) % 2 === 0;
+    carro(x, y, Math.atan2(dy, dx), corCat(c.ch.cat), c.freando && c.estado === 'movendo', pisca);
+  }
+}
+
+// ------------------------------------------------------------------ painel
+const ROT = { FRENTE: 0, DIREITA: 90, ESQUERDA: -90, PARE: 180 };
+const fmtS = s => s >= 60 ? `${Math.floor(s / 60)}min ${String(Math.round(s % 60)).padStart(2, '0')}s` : `${Math.round(s)} s`;
+function atualizarPainel(forcar) {
+  const u = sim.ultimo;
+  if (u) {
+    $('g-placa').textContent = u.placa; $('g-cat').textContent = u.cat; $('g-vaga').textContent = u.vaga;
+    $('g-seta').style.transform = `rotate(${ROT[u.seta]}deg)`;
+    $('g-instr').innerHTML = u.instr.map(i => `<li>${i}</li>`).join(''); $('g-msg').textContent = u.msg;
+  } else if (forcar) {
+    $('g-placa').textContent = '-------'; $('g-cat').textContent = '--'; $('g-vaga').textContent = '--'; $('g-instr').innerHTML = ''; $('g-msg').textContent = 'Aguardando o primeiro carro.';
+  }
+  const t = sim.t, sinal = t < 0 ? '−' : '+', a = Math.abs(t);
+  $('m-relogio').textContent = `${sinal}${Math.floor(a / 60)}:${String(Math.floor(a % 60)).padStart(2, '0')}`;
+  const m = sim.metricas();
+  $('m-est').textContent = m.estacionados; $('m-tot').textContent = `de ${m.total} carros do culto`;
+  $('m-tempo').textContent = m.estacionados ? fmtS(m.interno) : '--';
+  $('m-parado').textContent = m.estacionados ? fmtS(m.parado) : '--';
+  $('m-fila').textContent = sim.fila.length + (sim.atend ? 1 : 0);
+  $('m-prev').textContent = sim.est === 'preditiva' && sim.prev !== null ? sim.prev.toFixed(1) + ' carros' : '--';
+  $('m-prev-s').textContent = sim.est === 'preditiva' ? 'chegadas esperadas' : 'só na estratégia preditiva';
+  $('zonas').innerHTML = ZONAS.map(z => {
+    const vs = VAGAS.filter(v => v.zona === z), oc = vs.filter(v => sim.ocup[v.id]).length;
+    return `<div class="zona"><span>${z}</span><div class="trilho"><div style="width:${100 * oc / vs.length}%"></div></div><span>${oc}/${vs.length}</span></div>`;
+  }).join('');
+}
+
+let ultimoQuadro = performance.now(), acumulado = 0, contPainel = 0;
+function laco(agora) {
+  const dt = Math.min(.1, (agora - ultimoQuadro) / 1000); ultimoQuadro = agora;
+  if (estado.rodando && !sim.fim) {
+    acumulado += dt * estado.vel;
+    while (acumulado >= DT) { sim.passo(); acumulado -= DT; }
+  }
+  desenhar();
+  if (++contPainel % 6 === 0) atualizarPainel(false);
+  requestAnimationFrame(laco);
+}
+
+// ------------------------------------------------------------------ gráfico do experimento (Python)
+function graficoPython() {
+  const cens = Object.keys(D.resultados), chaves = ESTRATEGIAS.map(e => e[0]);
+  const W = 1000, H = 330, m = { l: 48, r: 12, t: 16, b: 58 };
+  const max = Math.ceil(Math.max(...cens.flatMap(c => chaves.map(k => D.resultados[c][k].porta_a_porta_medio_s))) / 50) * 50;
+  const y = v => m.t + (H - m.t - m.b) * (1 - v / max);
+  const gw = (W - m.l - m.r) / cens.length, bw = Math.min(30, (gw - 24) / 4);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Tempo médio porta a porta por cenário e estratégia">`;
+  for (let v = 0; v <= max; v += 50) s += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--linha)"/><text x="${m.l - 8}" y="${y(v) + 4}" text-anchor="end" font-size="12" fill="var(--sub)" font-family="var(--mono)">${v}s</text>`;
+  cens.forEach((c, i) => {
+    const x0 = m.l + i * gw + (gw - 4 * bw - 6) / 2;
+    chaves.forEach((k, j) => {
+      const v = D.resultados[c][k].porta_a_porta_medio_s, x = x0 + j * (bw + 2);
+      s += `<g><title>${c} · ${ESTRATEGIAS[j][1]}: ${v.toFixed(0)} s</title><path d="M${x},${y(0)} V${y(v) + 4} q0,-4 4,-4 h${bw - 8} q4,0 4,4 V${y(0)} Z" fill="var(${ESTRATEGIAS[j][2]})"/>`;
+      s += `<text x="${x + bw / 2}" y="${y(v) - 5}" text-anchor="middle" font-size="11" fill="var(--sub)" font-family="var(--mono)">${v.toFixed(0)}</text></g>`;
+    });
+    const red = 100 * (1 - D.resultados[c].preditiva.porta_a_porta_medio_s / D.resultados[c].sem_sistema.porta_a_porta_medio_s);
+    s += `<text x="${m.l + i * gw + gw / 2}" y="${H - m.b + 20}" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">${c.replace(' (estresse)', '')}</text>`;
+    s += `<text x="${m.l + i * gw + gw / 2}" y="${H - m.b + 38}" text-anchor="middle" font-size="12" fill="var(--sub)">−${red.toFixed(0)}% com IA</text>`;
+  });
+  s += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(0)}" y2="${y(0)}" stroke="var(--sub)"/></svg>`;
+  s += `<div class="legenda">${ESTRATEGIAS.map(e => `<span><i style="background:var(${e[2]})"></i>${e[1]}</span>`).join('')}</div>`;
+  $('grafico-python').innerHTML = s;
+}
+
+// ------------------------------------------------------------------ comparação no navegador
+$('rodar').onclick = () => {
+  const c = CENARIOS[estado.cenario], REPS = 4;
+  const res = Object.fromEntries(ESTRATEGIAS.map(e => [e[0], []]));
+  let rep = 0; $('rodar').disabled = true;
+  const lote = () => {
+    const chegadas = gerarChegadas(c, new RNG(50000 + rep * 97 + estado.cenario));
+    for (const [k] of ESTRATEGIAS) { const s = new Sim(chegadas, k, c.idx, rep); while (!s.fim) s.passo(); res[k].push(s.metricas()); }
+    rep++; $('progresso').textContent = `culto ${rep} de ${REPS}…`;
+    if (rep < REPS) setTimeout(lote, 0); else { $('rodar').disabled = false; $('progresso').textContent = `${c.nome}: ${REPS} cultos sorteados`; tabela(res); }
+  };
+  lote();
+};
+function tabela(res) {
+  const media = (k, f) => res[k].reduce((a, m) => a + m[f], 0) / res[k].length;
+  const cols = [['portaAPorta', 'Porta a porta'], ['p95', 'Pior 5% até a vaga'], ['interno', 'Cancela → vaga'], ['parado', 'Parado em fila']];
+  const melhores = Object.fromEntries(cols.map(([f]) => [f, Math.min(...ESTRATEGIAS.map(e => media(e[0], f)))]));
+  const base = media('sem_sistema', 'portaAPorta');
+  $('tabela').innerHTML = `<table><thead><tr><th>Estratégia</th>${cols.map(c => `<th>${c[1]}</th>`).join('')}<th>Ganho</th></tr></thead><tbody>${ESTRATEGIAS.map(([k, r, cor]) =>
+    `<tr><td><span class="legenda" style="padding:0"><span><i style="background:var(${cor})"></i>${r}</span></span></td>${cols.map(([f]) => { const v = media(k, f); return `<td class="${Math.abs(v - melhores[f]) < .05 ? 'melhor' : ''}">${v.toFixed(1)} s</td>`; }).join('')}<td>${k === 'sem_sistema' ? '—' : '−' + (100 * (1 - media(k, 'portaAPorta') / base)).toFixed(0) + '%'}</td></tr>`).join('')}</tbody></table>`;
+}
+
+graficoPython();
+ajustarCanvas();
+reiniciar();
+requestAnimationFrame(laco);
+</script>

@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<title>Corredor · Smart Park</title>
+<link rel="preload" href="/fontes/overpass-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/estilo.css">
+<script src="/ui.js"></script>
+<style>
+  /* App do funcionário do corredor (celular). Mostro só os carros mandados para o corredor dele,
+     para ele conferir se o carro é mesmo daquela vaga e ajudar a estacionar. */
+  body { min-height: 100vh; padding-bottom: env(safe-area-inset-bottom); }
+  .topo { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+          border-bottom: 1px solid var(--border); padding: 10px 16px 0; }
+  .topo-l1 { display: flex; align-items: center; gap: 10px; }
+  .topo-l1 .brand { padding: 0; }
+  .topo-l1 .dir { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: var(--t-sm); color: var(--text-2); }
+  .setores { display: flex; gap: 6px; overflow-x: auto; padding: 12px 0; scrollbar-width: none; }
+  .setores::-webkit-scrollbar { display: none; }
+  .setores button { flex: none; min-width: 46px; height: 46px; border-radius: var(--r-md); border: 1px solid var(--border-strong); background: var(--surface);
+                    color: var(--text-2); font: 800 var(--t-lg)/1 var(--font); cursor: pointer; }
+  .setores button[aria-pressed="true"] { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+  main { padding: 16px; display: grid; gap: 16px; max-width: 640px; margin: 0 auto; }
+  .resumo { display: flex; align-items: baseline; gap: 10px; }
+  .resumo h1 { font-size: var(--t-2xl); line-height: var(--lh-2xl); font-weight: 800; }
+  .resumo span { color: var(--text-2); }
+
+  /* aviso de cadastro (3ª visita) */
+  .aviso { border: 2px solid var(--brand); border-radius: var(--r-xl); background: linear-gradient(180deg, var(--brand-soft), transparent 80%), var(--surface); padding: 16px; display: grid; gap: 12px; animation: surgir .25s var(--ease); }
+  .aviso .eyebrow { color: var(--brand-text); }
+  .aviso h2 { font-size: var(--t-lg); line-height: var(--lh-lg); font-weight: 800; }
+  .aviso p { color: var(--text-2); font-size: var(--t-sm); line-height: var(--lh-sm); }
+  .aviso .acoes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .aviso .acoes .btn { min-height: 48px; font-size: var(--t-base); }
+  .aviso .acoes .btn:last-child { grid-column: 1 / -1; }
+
+  .grupo { display: grid; gap: 10px; }
+  .grupo > h2 { display: flex; align-items: center; gap: 8px; }
+  .grupo > h2 .badge { margin-left: auto; }
+  .carro { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 14px 16px; display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; align-items: center; }
+  .carro.is-caminho { border-color: var(--brand-line); }
+  .carro.is-alerta { border-color: color-mix(in srgb, var(--warning) 55%, transparent); }
+  .carro .vg { grid-row: span 2; text-align: right; }
+  .carro .vg b { display: block; font: 800 40px/1 var(--font); color: var(--brand-text); font-variant-numeric: tabular-nums; }
+  .carro .vg small { color: var(--text-3); font-size: var(--t-xs); }
+  .carro .tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .carro .meta { color: var(--text-2); font-size: var(--t-sm); }
+  .carro .quem { grid-column: 1 / -1; display: grid; gap: 2px; padding-top: 8px; border-top: 1px solid var(--border); }
+  .carro .quem strong { font-size: var(--t-lg); line-height: var(--lh-lg); font-weight: 800; }
+  .carro .quem span { color: var(--text-2); font-size: var(--t-sm); }
+  .placa-br { display: inline-grid; border: 1.5px solid #0d0f12; border-radius: 5px; overflow: hidden; background: #fff; color: #111; text-align: center; min-width: 124px; }
+  .placa-br i { display: block; background: #003399; color: #fff; font: 700 7px/1 var(--font); letter-spacing: .25em; padding: 3px 0 2px; font-style: normal; }
+  .placa-br b { font: 600 19px/1.25 var(--mono); letter-spacing: .1em; padding: 1px 8px 0; }
+  .compacto { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); }
+  .compacto li { display: grid; grid-template-columns: 48px 1fr auto; gap: 10px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--border); font-size: var(--t-sm); }
+  .compacto li:first-child { border-top: 0; }
+  .compacto ul { list-style: none; padding: 0; }
+  .compacto time { color: var(--text-3); font-variant-numeric: tabular-nums; }
+  details summary { cursor: pointer; color: var(--text-2); font-size: var(--t-sm); font-weight: 600; padding: 4px 0; }
+  .som { font-size: var(--t-xs); }
+</style>
+</head>
+<body>
+<header class="topo">
+  <div class="topo-l1">
+    <a class="brand" href="/corredor" aria-label="Smart Park"><span class="brand-mark" aria-hidden="true"><span><b>P</b></span></span>
+      <span class="brand-txt"><strong>Smart Park</strong><small>App do corredor</small></span></a>
+    <div class="dir"><button class="btn btn--sm som" id="som" type="button">Ativar som</button><span class="dot-live" id="dot" title="Conexão"></span></div>
+  </div>
+  <nav class="setores" id="setores" aria-label="Escolha o seu corredor"></nav>
+</header>
+
+<main>
+  <div class="resumo"><h1 id="titulo">Corredor –</h1><span id="livres"></span></div>
+  <div id="avisos" aria-live="assertive"></div>
+
+  <section class="grupo" aria-labelledby="h-cam">
+    <h2 class="h2" id="h-cam">A caminho <span class="badge badge--brand" id="n-cam">0</span></h2>
+    <div id="caminho"></div>
+  </section>
+
+  <section class="grupo" id="g-sem" aria-labelledby="h-sem" hidden>
+    <h2 class="h2" id="h-sem">Pararam sem indicação <span class="badge badge--warning" id="n-sem">0</span></h2>
+    <p class="text-sm muted">O sensor viu um carro numa vaga que não estava reservada. Pode ser alguém fora da vaga indicada.</p>
+    <div id="sem"></div>
+  </section>
+
+  <section class="grupo" aria-labelledby="h-est">
+    <h2 class="h2" id="h-est">Estacionados <span class="badge" id="n-est">0</span></h2>
+    <div class="compacto"><ul id="estacionados"></ul></div>
+  </section>
+
+  <details><summary id="s-outros">Outros (trocaram de vaga, não chegaram, já saíram)</summary>
+    <div class="compacto" style="margin-top:8px"><ul id="outros"></ul></div></details>
+</main>
+
+<script>
+const $ = id => document.getElementById(id), { f } = UI;
+const CHAVE = 'sp-corredor';
+let setor = null, setores = [], avisosVistos = new Set(), primeira = true, somLigado = false, ctxAudio = null;
+try { setor = localStorage.getItem(CHAVE); } catch (e) {}
+
+// ---------------------------------------------------------------- som e vibração do aviso
+$('som').onclick = () => {
+  somLigado = !somLigado;
+  if (somLigado && !ctxAudio) try { ctxAudio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+  $('som').textContent = somLigado ? 'Som ligado' : 'Ativar som';
+  $('som').classList.toggle('btn--primary', somLigado);
+  if (somLigado) bip();
+};
+function bip() {
+  if (!somLigado || !ctxAudio) return;
+  const o = ctxAudio.createOscillator(), g = ctxAudio.createGain();
+  o.frequency.value = 880; g.gain.value = .08; o.connect(g); g.connect(ctxAudio.destination);
+  o.start(); setTimeout(() => { o.frequency.value = 1175; }, 150); setTimeout(() => o.stop(), 320);
+}
+function alertar() { bip(); try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (e) {} }
+
+// ---------------------------------------------------------------- escolher o corredor
+function desenharSetores() {
+  $('setores').innerHTML = setores.map(z => `<button type="button" data-z="${z}" aria-pressed="${z === setor}" aria-label="Corredor ${z}">${z}</button>`).join('');
+  $('setores').querySelectorAll('button').forEach(b => b.onclick = () => escolher(b.dataset.z));
+  $('setores').querySelector('[aria-pressed="true"]')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+}
+function escolher(z) {
+  setor = z; try { localStorage.setItem(CHAVE, z); } catch (e) {}
+  avisosVistos = new Set(); primeira = true;
+  desenharSetores(); atualizar();
+}
+
+// ---------------------------------------------------------------- desenho
+const placa = p => p && p !== 'ILEGÍVEL' ? `<span class="placa-br" aria-label="Placa ${f.esc(p)}"><i>BRASIL</i><b>${f.esc(p)}</b></span>` : '<span class="badge">Placa não lida</span>';
+const ha = (t, agora) => { const s = Math.max(0, Math.round(agora - t)); return s < 60 ? `há ${s} s` : s < 3600 ? `há ${Math.floor(s / 60)} min` : `às ${f.hora(t)}`; };
+function tags(c) {
+  return [UI.catBadge(c.categoria), c.necessidade ? UI.catBadge(c.necessidade) : '',
+    c.visitante && c.visitas > 1 ? `<span class="badge no-dot">${c.visitas}ª visita</span>` : c.visitante ? '<span class="badge no-dot">1ª visita</span>' : '',
+    c.oferecer_cadastro ? '<span class="badge badge--brand">Oferecer cadastro</span>' : ''].join('');
+}
+// Quem está no carro: nome do cadastro e categoria, para o funcionário receber a pessoa pelo nome
+// e saber se ela precisa de ajuda (idoso, PcD) ou se é visitante.
+const ROTULO = { MEMBRO: 'Membro', IDOSO: 'Idoso(a)', PCD: 'Pessoa com deficiência', EQUIPE: 'Equipe / voluntário', VISITANTE: 'Visitante' };
+const DICA = { IDOSO: 'Ofereça ajuda para descer e acompanhe até a calçada.', PCD: 'Confira se a vaga PcD está livre e se precisa de ajuda com a cadeira ou o acesso.',
+               VISITANTE: 'Dê as boas-vindas e indique a entrada do templo.' };
+function quem(c) {
+  if (c.estado === 'sem_indicacao') return '';
+  const cat = c.necessidade || c.categoria;
+  const nome = c.apelido || (c.visitante ? (c.visitas > 1 ? `Visitante (${c.visitas}ª visita)` : 'Visitante (1ª visita)') : 'Sem nome no cadastro');
+  const dica = DICA[cat] ? ` ${DICA[cat]}` : '';
+  return `<div class="quem"><strong>${f.esc(nome)}</strong><span>${f.esc(ROTULO[cat] || cat || '—')}${c.necessidade && c.visitante ? ' (declarado na cancela)' : ''}.${f.esc(dica)}</span></div>`;
+}
+function cardCarro(c, agora) {
+  const prefer = c.necessidade ? ` · vaga ${c.necessidade === 'PCD' ? 'PcD' : 'de idoso'}` : '';
+  return `<article class="carro ${c.estado === 'a_caminho' ? 'is-caminho' : 'is-alerta'}">
+    <div>${placa(c.placa)}</div>
+    <div class="vg"><small>${c.estado === 'sem_indicacao' ? 'ocupou a' : 'vaga'}</small><b>${f.esc(c.vaga)}</b></div>
+    <div class="tags">${c.estado === 'sem_indicacao' ? '<span class="badge badge--warning">Sem indicação</span>' : tags(c)}</div>
+    <div class="meta" style="grid-column:1 / -1">${c.estado === 'sem_indicacao' ? `Vaga ocupada ${ha(c.instante, agora)}. Confira se o carro é de outra vaga.` : `Entrou na cancela ${ha(c.instante, agora)}${prefer}`}</div>
+    ${quem(c)}
+  </article>`;
+}
+const NOME = { estacionou: 'Estacionou', trocou: 'Trocou de vaga', expirou: 'Não chegou', saiu: 'Saiu' };
+
+function desenharAvisos(avisos, agora) {
+  $('avisos').innerHTML = avisos.map(a => `<section class="aviso" role="alert" aria-labelledby="av-${a.id}">
+      <span class="eyebrow">Ofereça o cadastro</span>
+      <h2 id="av-${a.id}">Visitante na ${a.visitas}ª visita indo para a vaga ${f.esc(a.vaga)}</h2>
+      <div class="row">${placa(a.placa)}<span class="text-sm muted">${ha(a.instante, agora)}</span></div>
+      <p>Dê as boas-vindas e pergunte se ele quer se cadastrar. Com o cadastro, ele é reconhecido na entrada e recebe a vaga certa (idoso e PcD inclusive). O cadastro é feito na secretaria com o termo de consentimento.</p>
+      <div class="acoes">
+        <button class="btn btn--primary" type="button" data-av="${a.id}" data-r="aceitou">Aceitou</button>
+        <button class="btn" type="button" data-av="${a.id}" data-r="recusou">Não quis</button>
+        <button class="btn btn--ghost" type="button" data-av="${a.id}" data-r="nao_encontrei">Não consegui falar com ele</button>
+      </div></section>`).join('');
+  $('avisos').querySelectorAll('[data-av]').forEach(b => b.onclick = () => UI.enviando(b, async () => {
+    const r = await fetch('/api/corredor/oferta', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ aviso: +b.dataset.av, resultado: b.dataset.r }) });
+    const d = await r.json();
+    UI.toast(d.ok ? ({ aceitou: 'Ótimo! A secretaria vai concluir o cadastro.', recusou: 'Registrado. Não vamos insistir.', nao_encontrei: 'Tudo bem. Avisamos de novo na próxima visita.' })[b.dataset.r] : d.erro, d.ok ? 'success' : 'danger');
+    atualizar();
+  }));
+  const novos = avisos.filter(a => !avisosVistos.has(a.id));
+  if (novos.length && !primeira) alertar();
+  novos.forEach(a => avisosVistos.add(a.id));
+}
+
+// ---------------------------------------------------------------- atualização (2 s)
+async function atualizar() {
+  if (!setor) return;
+  let d;
+  try {
+    const r = await fetch('/api/corredor?setor=' + encodeURIComponent(setor), { cache: 'no-store' });
+    d = await r.json();
+    if (!r.ok) { setores = d.setores || setores; setor = setores[0]; desenharSetores(); return atualizar(); }
+    $('dot').classList.remove('is-off');
+  } catch (e) { $('dot').classList.add('is-off'); return; }
+  if (JSON.stringify(setores) !== JSON.stringify(d.setores)) { setores = d.setores; desenharSetores(); }
+  const agora = d.agora;
+  $('titulo').textContent = `Corredor ${d.setor}`;
+  $('livres').textContent = `${d.livres} de ${d.total} vagas livres`;
+  document.title = `Corredor ${d.setor} · Smart Park`;
+  desenharAvisos(d.avisos, agora);
+
+  const cam = d.carros.filter(c => c.estado === 'a_caminho'), sem = d.carros.filter(c => c.estado === 'sem_indicacao');
+  const est = d.carros.filter(c => c.estado === 'estacionou'), outros = d.carros.filter(c => ['trocou', 'expirou', 'saiu'].includes(c.estado));
+  $('n-cam').textContent = cam.length; $('n-sem').textContent = sem.length; $('n-est').textContent = est.length;
+  $('caminho').innerHTML = cam.length ? cam.map(c => cardCarro(c, agora)).join('')
+    : UI.vazio('Nenhum carro vindo para cá agora', 'Quando a guarita mandar um carro para este corredor, ele aparece aqui com a placa e a vaga.', 'carro');
+  $('g-sem').hidden = !sem.length;
+  $('sem').innerHTML = sem.map(c => cardCarro(c, agora)).join('');
+  $('estacionados').innerHTML = est.length ? est.map(c => `<li><b>${f.esc(c.vaga)}</b><span class="row" style="gap:6px"><span class="placa">${f.esc(c.placa || '—')}</span>${c.apelido ? `<span>${f.esc(c.apelido)}</span>` : ''}${UI.catBadge(c.necessidade || c.categoria)}</span><time>${f.hora(c.mudou_em)}</time></li>`).join('')
+    : '<li class="subtle" style="grid-template-columns:1fr">Ninguém estacionou ainda.</li>';
+  $('s-outros').textContent = `Outros (${outros.length}): trocaram de vaga, não chegaram, já saíram`;
+  $('outros').innerHTML = outros.map(c => `<li><b>${f.esc(c.vaga)}</b><span class="row" style="gap:6px"><span class="placa">${f.esc(c.placa || '—')}</span><span class="badge no-dot">${NOME[c.estado]}${c.trocou_para ? ' → ' + f.esc(c.trocou_para) : ''}</span></span><time>${f.hora(c.mudou_em)}</time></li>`).join('')
+    || '<li class="subtle" style="grid-template-columns:1fr">Nada por aqui.</li>';
+  primeira = false;
+}
+
+(async () => {
+  try { const L = await (await fetch('/layout')).json(); setores = [...new Set(L.vagas.map(v => v.zona))].sort(); } catch (e) {}
+  if (!setor || !setores.includes(setor)) setor = setores[0];
+  desenharSetores(); atualizar(); setInterval(atualizar, 2000);
+})();
+</script>
+</body>
+</html>

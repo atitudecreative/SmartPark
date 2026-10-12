@@ -1,0 +1,729 @@
+{
+  "nome": "Igreja Batista Atitude (referência)",
+  "entrada": "G",
+  "porta": [
+    22.0,
+    44.0
+  ],
+  "nos": [
+    {
+      "id": "G",
+      "x": 0,
+      "y": 30
+    },
+    {
+      "id": "J1",
+      "x": 25,
+      "y": 30
+    },
+    {
+      "id": "J2",
+      "x": 60,
+      "y": 30
+    },
+    {
+      "id": "J3",
+      "x": 95,
+      "y": 30
+    },
+    {
+      "id": "TA",
+      "x": 25,
+      "y": 4
+    },
+    {
+      "id": "TB",
+      "x": 60,
+      "y": 4
+    },
+    {
+      "id": "TC",
+      "x": 95,
+      "y": 4
+    }
+  ],
+  "arestas": [
+    {
+      "a": "G",
+      "b": "J1",
+      "comprimento": 25.0,
+      "tipo": "via",
+      "zona": null
+    },
+    {
+      "a": "J1",
+      "b": "J2",
+      "comprimento": 35.0,
+      "tipo": "via",
+      "zona": null
+    },
+    {
+      "a": "J2",
+      "b": "J3",
+      "comprimento": 35.0,
+      "tipo": "via",
+      "zona": null
+    },
+    {
+      "a": "TA",
+      "b": "TB",
+      "comprimento": 35.0,
+      "tipo": "via",
+      "zona": null
+    },
+    {
+      "a": "TB",
+      "b": "TC",
+      "comprimento": 35.0,
+      "tipo": "via",
+      "zona": null
+    },
+    {
+      "a": "J1",
+      "b": "TA",
+      "comprimento": 26.0,
+      "tipo": "corredor",
+      "zona": "A"
+    },
+    {
+      "a": "J2",
+      "b": "TB",
+      "comprimento": 26.0,
+      "tipo": "corredor",
+      "zona": "B"
+    },
+    {
+      "a": "J3",
+      "b": "TC",
+      "comprimento": 26.0,
+      "tipo": "corredor",
+      "zona": "C"
+    }
+  ],
+  "vagas": [
+    {
+      "id": "A01",
+      "zona": "A",
+      "aresta": [
+        "J1",
+        "TA"
+      ],
+      "offset": 4.0,
+      "lado": -1,
+      "tipo": "idoso",
+      "x": 21.0,
+      "y": 26.0
+    },
+    {
+      "id": "A02",
+      "zona": "A",
+      "aresta": [
+        "J1",
+        "TA"
+      ],
+      "offset": 4.0,
+      "lado": 1,
+      "tipo": "idoso",
+      "x": 29.0,
+      "y": 26.0
+    },
+    {
+      "id": "A03",
+      "zona": "A",
+      "aresta": [
+        "J1",
+        "TA"
+      ],
+      "offset": 6.6,
+      "lado": -1,
+      "tipo": "idoso",
+      "x": 21.0,
+      "y": 23.4
+    },
+    {
+      "id": "A04",
+      "zona": "A",
+      "aresta": [
+        "J1",
+        "TA"
+      ],
+      "offset": 6.6,
+      "lado": 1,
+      "tipo": "pcd",
+      "x": 29.0,
+      "y": 23.4
+    },
+    {
+      "id": "A05",
+      "zona": "A",
+      "aresta": [
+        "J1",
+        "TA"
+      ],
+      "offset": 9.2,
+      "lado": -1,
+      "tipo": "comum",
+      "x": 21.0,
+      "y": 20.8
+    },
+    {
+      "id": "A06",
+      "zona": "A",
+      "aresta": [
+        "J1",
+        "TA"
+      ],
+      "offset": 9.2,
+      "lado": 1,
+      "tipo": "comum",
+      "x": 29.0,
+      "y": 20.8
+    },
+    {
+      "id": "A07",
+      "zona": "A",
+      "aresta": [
+        "J1",
+        "TA"
+      ],
+      "offset": 11.8,
+      "lado": -1,
+      "tipo": "comum",
+      "x": 21.0,
+      "y": 18.2
+    },
+    {
+      "id": "A08",
+      "zona": "A",
+      "aresta": [
+        "J1",
+        "TA"
+      ],
+      "offset": 11.8,
+      "lado": 1,
+      "tipo": "comum",
+      "x": 29.0,
+      "y": 18.2
+    },
+    {
+      "id": "A09",
+      "zona": "A",
+      "aresta": [
+        "J1",
+        "TA"
+      ],
+      "offset": 14.4,
+      "lado": -1,
+      "tipo": "comum",
+      "x": 21.0,
+      "y": 15.6
+    },
+    {
+      "id": "A10",
+      "zona": "A",
+      "aresta": [
+        "J1",
+        "TA"
+      ],
+      "offset": 14.4,
+      "lado": 1,
+      "tipo": "comum",
+      "x": 29.0,
+      "y": 15.6
+    },
+    {
+      "id": "A11",
+      "zona": "A",
+      "aresta": [
+        "J1",
+        "TA"
+      ],
+      "offset": 17.0,
+      "lado": -1,
+      "tipo": "comum",
+      "x": 21.0,
+      "y": 13.0
+    },
+    {
+      "id": "A12",
+      "zona": "A",
+      "aresta": [
+        "J1",
+        "TA"
+      ],
+      "offset": 17.0,
+      "lado": 1,
+      "tipo": "comum",
+      "x": 29.0,
+      "y": 13.0
+    },
+    {
+      "id": "A13",
+      "zona": "A",
+      "aresta": [
+        "J1",
+        "TA"
+      ],
+      "offset": 19.6,
+      "lado": -1,
+      "tipo": "comum",
+      "x": 21.0,
+      "y": 10.4
+    },
+    {
+      "id": "A14",
+      "zona": "A",
+      "aresta": [
+        "J1",
+        "TA"
+      ],
+      "offset": 19.6,
+      "lado": 1,
+      "tipo": "comum",
+      "x": 29.0,
+      "y": 10.4
+    },
+    {
+      "id": "A15",
+      "zona": "A",
+      "aresta": [
+        "J1",
+        "TA"
+      ],
+      "offset": 22.2,
+      "lado": -1,
+      "tipo": "comum",
+      "x": 21.0,
+      "y": 7.8
+    },
+    {
+      "id": "A16",
+      "zona": "A",
+      "aresta": [
+        "J1",
+        "TA"
+      ],
+      "offset": 22.2,
+      "lado": 1,
+      "tipo": "comum",
+      "x": 29.0,
+      "y": 7.8
+    },
+    {
+      "id": "B01",
+      "zona": "B",
+      "aresta": [
+        "J2",
+        "TB"
+      ],
+      "offset": 4.0,
+      "lado": -1,
+      "tipo": "comum",
+      "x": 56.0,
+      "y": 26.0
+    },
+    {
+      "id": "B02",
+      "zona": "B",
+      "aresta": [
+        "J2",
+        "TB"
+      ],
+      "offset": 4.0,
+      "lado": 1,
+      "tipo": "comum",
+      "x": 64.0,
+      "y": 26.0
+    },
+    {
+      "id": "B03",
+      "zona": "B",
+      "aresta": [
+        "J2",
+        "TB"
+      ],
+      "offset": 6.6,
+      "lado": -1,
+      "tipo": "comum",
+      "x": 56.0,
+      "y": 23.4
+    },
+    {
+      "id": "B04",
+      "zona": "B",
+      "aresta": [
+        "J2",
+        "TB"
+      ],
+      "offset": 6.6,
+      "lado": 1,
+      "tipo": "comum",
+      "x": 64.0,
+      "y": 23.4
+    },
+    {
+      "id": "B05",
+      "zona": "B",
+      "aresta": [
+        "J2",
+        "TB"
+      ],
+      "offset": 9.2,
+      "lado": -1,
+      "tipo": "comum",
+      "x": 56.0,
+      "y": 20.8
+    },
+    {
+      "id": "B06",
+      "zona": "B",
+      "aresta": [
+        "J2",
+        "TB"
+      ],
+      "offset": 9.2,
+      "lado": 1,
+      "tipo": "comum",
+      "x": 64.0,
+      "y": 20.8
+    },
+    {
+      "id": "B07",
+      "zona": "B",
+      "aresta": [
+        "J2",
+        "TB"
+      ],
+      "offset": 11.8,
+      "lado": -1,
+      "tipo": "comum",
+      "x": 56.0,
+      "y": 18.2
+    },
+    {
+      "id": "B08",
+      "zona": "B",
+      "aresta": [
+        "J2",
+        "TB"
+      ],
+      "offset": 11.8,
+      "lado": 1,
+      "tipo": "comum",
+      "x": 64.0,
+      "y": 18.2
+    },
+    {
+      "id": "B09",
+      "zona": "B",
+      "aresta": [
+        "J2",
+        "TB"
+      ],
+      "offset": 14.4,
+      "lado": -1,
+      "tipo": "comum",
+      "x": 56.0,
+      "y": 15.6
+    },
+    {
+      "id": "B10",
+      "zona": "B",
+      "aresta": [
+        "J2",
+        "TB"
+      ],
+      "offset": 14.4,
+      "lado": 1,
+      "tipo": "comum",
+      "x": 64.0,
+      "y": 15.6
+    },
+    {
+      "id": "B11",
+      "zona": "B",
+      "aresta": [
+        "J2",
+        "TB"
+      ],
+      "offset": 17.0,
+      "lado": -1,
+      "tipo": "comum",
+      "x": 56.0,
+      "y": 13.0
+    },
+    {
+      "id": "B12",
+      "zona": "B",
+      "aresta": [
+        "J2",
+        "TB"
+      ],
+      "offset": 17.0,
+      "lado": 1,
+      "tipo": "comum",
+      "x": 64.0,
+      "y": 13.0
+    },
+    {
+      "id": "B13",
+      "zona": "B",
+      "aresta": [
+        "J2",
+        "TB"
+      ],
+      "offset": 19.6,
+      "lado": -1,
+      "tipo": "comum",
+      "x": 56.0,
+      "y": 10.4
+    },
+    {
+      "id": "B14",
+      "zona": "B",
+      "aresta": [
+        "J2",
+        "TB"
+      ],
+      "offset": 19.6,
+      "lado": 1,
+      "tipo": "comum",
+      "x": 64.0,
+      "y": 10.4
+    },
+    {
+      "id": "B15",
+      "zona": "B",
+      "aresta": [
+        "J2",
+        "TB"
+      ],
+      "offset": 22.2,
+      "lado": -1,
+      "tipo": "comum",
+      "x": 56.0,
+      "y": 7.8
+    },
+    {
+      "id": "B16",
+      "zona": "B",
+      "aresta": [
+        "J2",
+        "TB"
+      ],
+      "offset": 22.2,
+      "lado": 1,
+      "tipo": "comum",
+      "x": 64.0,
+      "y": 7.8
+    },
+    {
+      "id": "C01",
+      "zona": "C",
+      "aresta": [
+        "J3",
+        "TC"
+      ],
+      "offset": 4.0,
+      "lado": -1,
+      "tipo": "comum",
+      "x": 91.0,
+      "y": 26.0
+    },
+    {
+      "id": "C02",
+      "zona": "C",
+      "aresta": [
+        "J3",
+        "TC"
+      ],
+      "offset": 4.0,
+      "lado": 1,
+      "tipo": "comum",
+      "x": 99.0,
+      "y": 26.0
+    },
+    {
+      "id": "C03",
+      "zona": "C",
+      "aresta": [
+        "J3",
+        "TC"
+      ],
+      "offset": 6.6,
+      "lado": -1,
+      "tipo": "comum",
+      "x": 91.0,
+      "y": 23.4
+    },
+    {
+      "id": "C04",
+      "zona": "C",
+      "aresta": [
+        "J3",
+        "TC"
+      ],
+      "offset": 6.6,
+      "lado": 1,
+      "tipo": "comum",
+      "x": 99.0,
+      "y": 23.4
+    },
+    {
+      "id": "C05",
+      "zona": "C",
+      "aresta": [
+        "J3",
+        "TC"
+      ],
+      "offset": 9.2,
+      "lado": -1,
+      "tipo": "comum",
+      "x": 91.0,
+      "y": 20.8
+    },
+    {
+      "id": "C06",
+      "zona": "C",
+      "aresta": [
+        "J3",
+        "TC"
+      ],
+      "offset": 9.2,
+      "lado": 1,
+      "tipo": "comum",
+      "x": 99.0,
+      "y": 20.8
+    },
+    {
+      "id": "C07",
+      "zona": "C",
+      "aresta": [
+        "J3",
+        "TC"
+      ],
+      "offset": 11.8,
+      "lado": -1,
+      "tipo": "comum",
+      "x": 91.0,
+      "y": 18.2
+    },
+    {
+      "id": "C08",
+      "zona": "C",
+      "aresta": [
+        "J3",
+        "TC"
+      ],
+      "offset": 11.8,
+      "lado": 1,
+      "tipo": "comum",
+      "x": 99.0,
+      "y": 18.2
+    },
+    {
+      "id": "C09",
+      "zona": "C",
+      "aresta": [
+        "J3",
+        "TC"
+      ],
+      "offset": 14.4,
+      "lado": -1,
+      "tipo": "comum",
+      "x": 91.0,
+      "y": 15.6
+    },
+    {
+      "id": "C10",
+      "zona": "C",
+      "aresta": [
+        "J3",
+        "TC"
+      ],
+      "offset": 14.4,
+      "lado": 1,
+      "tipo": "comum",
+      "x": 99.0,
+      "y": 15.6
+    },
+    {
+      "id": "C11",
+      "zona": "C",
+      "aresta": [
+        "J3",
+        "TC"
+      ],
+      "offset": 17.0,
+      "lado": -1,
+      "tipo": "comum",
+      "x": 91.0,
+      "y": 13.0
+    },
+    {
+      "id": "C12",
+      "zona": "C",
+      "aresta": [
+        "J3",
+        "TC"
+      ],
+      "offset": 17.0,
+      "lado": 1,
+      "tipo": "comum",
+      "x": 99.0,
+      "y": 13.0
+    },
+    {
+      "id": "C13",
+      "zona": "C",
+      "aresta": [
+        "J3",
+        "TC"
+      ],
+      "offset": 19.6,
+      "lado": -1,
+      "tipo": "comum",
+      "x": 91.0,
+      "y": 10.4
+    },
+    {
+      "id": "C14",
+      "zona": "C",
+      "aresta": [
+        "J3",
+        "TC"
+      ],
+      "offset": 19.6,
+      "lado": 1,
+      "tipo": "comum",
+      "x": 99.0,
+      "y": 10.4
+    },
+    {
+      "id": "C15",
+      "zona": "C",
+      "aresta": [
+        "J3",
+        "TC"
+      ],
+      "offset": 22.2,
+      "lado": -1,
+      "tipo": "comum",
+      "x": 91.0,
+      "y": 7.8
+    },
+    {
+      "id": "C16",
+      "zona": "C",
+      "aresta": [
+        "J3",
+        "TC"
+      ],
+      "offset": 22.2,
+      "lado": 1,
+      "tipo": "comum",
+      "x": 99.0,
+      "y": 7.8
+    }
+  ]
+}
